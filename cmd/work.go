@@ -19,19 +19,31 @@ import (
 // matching /lathe-* protocol in the interactive session (the binary still never
 // drives a model), then reports back via `work answer` (ask) or `work done`
 // (verify/extend). All three talk to the running server, discovered through
-// ~/.lathe/serve.json.
+// ~/.lathe/serve.json, or via --server when the worker runs on a different
+// machine than `lathe serve`.
 var workCmd = &cobra.Command{
 	Use:   "work",
 	Short: "Worker-loop commands bridging the web UI and this session (used by the /lathe-work skill)",
 }
 
-// serveBaseURL reads the running server's base URL from ~/.lathe/serve.json,
-// returning a clean, actionable error when no server is running.
+// workServerURL overrides discovery via --server, for a worker session running
+// on a different machine than `lathe serve` — ~/.lathe/serve.json only ever
+// holds the server's own loopback URL (see cmd/serve.go), so cross-machine
+// setups (serve behind --bind/--public-origin, worker on another VM) have no
+// local runtime file to read and must be told the URL explicitly.
+var workServerURL string
+
+// serveBaseURL resolves the running server's base URL: --server if set,
+// otherwise ~/.lathe/serve.json, returning a clean, actionable error when
+// neither is available.
 func serveBaseURL() (string, error) {
+	if workServerURL != "" {
+		return strings.TrimRight(workServerURL, "/"), nil
+	}
 	rt, err := config.ReadServeRuntime()
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("no lathe server is running (start one with `lathe serve`)")
+			return "", fmt.Errorf("no lathe server is running (start one with `lathe serve`, or pass --server for a remote one)")
 		}
 		return "", fmt.Errorf("read serve runtime file: %w", err)
 	}
@@ -149,6 +161,7 @@ func postJSON(url string, payload any) error {
 }
 
 func init() {
+	workCmd.PersistentFlags().StringVar(&workServerURL, "server", "", "lathe server base URL (e.g. https://lathe.lan); overrides auto-discovery from ~/.lathe/serve.json, for a worker session on a different machine than `lathe serve`")
 	workAnswerCmd.Flags().StringVar(&workAnswerFile, "answer", "", "path to the answer markdown, or - for stdin (required)")
 	workCmd.AddCommand(workNextCmd, workAnswerCmd, workDoneCmd)
 	rootCmd.AddCommand(workCmd)

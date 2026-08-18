@@ -147,6 +147,25 @@ func TestDeleteAllowsSameOrigin(t *testing.T) {
 	}
 }
 
+func TestDeleteAllowsReverseProxiedRequestHost(t *testing.T) {
+	dir := t.TempDir()
+	tutDir := makeTestTutorial(t, dir, "victim", false)
+
+	srv := serve.NewServer(dir)
+	req := httptest.NewRequest(http.MethodPost, "/-/delete/victim", nil)
+	req.Host = "la.the"
+	req.Header.Set("Origin", "https://la.the")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("reverse-proxied same-origin delete = %d, want %d", w.Code, http.StatusSeeOther)
+	}
+	if _, err := os.Stat(tutDir); !os.IsNotExist(err) {
+		t.Errorf("reverse-proxied same-origin delete did not remove the tutorial dir: err=%v", err)
+	}
+}
+
 func TestDeleteAllowsNoOriginHeaders(t *testing.T) {
 	// A plain form POST from the page itself may carry no Origin and an
 	// allowed Referer; a request with neither header (e.g. curl) is also

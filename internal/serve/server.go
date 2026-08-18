@@ -344,14 +344,18 @@ func verifyMeta(tut *store.Tutorial, tutDir string) (*store.VerifyResult, string
 // sameOrigin reports whether a state-changing request originated from a page
 // served by this server. It rejects a *present* Origin or Referer that points
 // elsewhere — the defense against CSRF, where another site (or a LAN device)
-// POSTs to our predictable localhost port. A request with neither header (e.g.
-// curl, or a same-origin form POST that omits Origin) is allowed.
+// POSTs to our predictable localhost port. Besides loopback and an explicitly
+// configured public origin, it accepts the request Host itself. The latter is
+// what lets a conventional reverse proxy preserve its public Host header
+// without requiring --public-origin just for browser mutations. A request with
+// neither header (e.g. curl, or a same-origin form POST that omits Origin) is
+// allowed.
 func sameOrigin(r *http.Request) bool {
 	if origin := r.Header.Get("Origin"); origin != "" {
-		return isLocalOrigin(origin)
+		return isLocalOrigin(origin) || isRequestHost(origin, r.Host)
 	}
 	if ref := r.Header.Get("Referer"); ref != "" {
-		return isLocalOrigin(ref)
+		return isLocalOrigin(ref) || isRequestHost(ref, r.Host)
 	}
 	return true
 }
@@ -376,6 +380,21 @@ func isLocalOrigin(raw string) bool {
 		return true
 	}
 	return PublicHost != "" && host == PublicHost
+}
+
+// isRequestHost reports whether raw names the host the browser addressed for
+// this request. Matching hostnames rather than exact ports mirrors the existing
+// --public-origin behavior and accommodates TLS-terminating reverse proxies.
+func isRequestHost(raw, requestHost string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	host := requestHost
+	if parsed, err := url.Parse("//" + requestHost); err == nil {
+		host = parsed.Hostname()
+	}
+	return strings.EqualFold(u.Hostname(), host)
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
