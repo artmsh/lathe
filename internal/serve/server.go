@@ -356,15 +356,26 @@ func sameOrigin(r *http.Request) bool {
 	return true
 }
 
-// isLocalOrigin reports whether a URL's host is loopback. We match on host
-// rather than an exact port because the listen port is configurable (--port).
+// PublicHost, if set, is an additional origin host isLocalOrigin accepts
+// alongside loopback. Set once at process startup by `lathe serve
+// --public-origin`, for deployments fronted by a reverse proxy under a real
+// hostname (loopback is never reachable through the proxy, so without this
+// every state-changing request 403s).
+var PublicHost string
+
+// isLocalOrigin reports whether a URL's host is loopback, or matches
+// PublicHost when one is configured. We match on host rather than an exact
+// port because the listen port is configurable (--port).
 func isLocalOrigin(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return false
 	}
 	host := u.Hostname()
-	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return true
+	}
+	return PublicHost != "" && host == PublicHost
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
