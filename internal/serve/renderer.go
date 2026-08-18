@@ -35,6 +35,10 @@ type TOCEntry struct {
 // within exercise-related output at the bottom of tutorials.
 type exerciseCheckboxRenderer struct{}
 
+// Overrides the goldmark table renderer so every table ships inside a
+// horizontally scrollable wrapper. See renderScrollableTable.
+type scrollableTableRenderer struct{}
+
 // Chroma syntax styles, chosen to harmonize with the warm "paper"/"ember"
 // palette: tango's muted browns/olives in light, gruvbox's warm ambers/oranges
 // in dark. Only the syntax-token hues come from these — the code-block
@@ -110,11 +114,13 @@ func RenderMarkdownWithTOC(src []byte) ([]byte, []TOCEntry, error) {
 		),
 		goldmark.WithRendererOptions(
 			goldmarkhtml.WithUnsafe(),
-			// Override the TaskList extension's checkbox renderer (priority 500).
-			// goldmark registers node renderers lowest-number-wins, so 100 takes
-			// precedence (see exerciseCheckboxRenderer).
+			// Override the TaskList extension's checkbox renderer and the Table
+			// extension's <table> renderer (both priority 500). goldmark registers
+			// node renderers lowest-number-wins, so 100 takes precedence (see
+			// exerciseCheckboxRenderer, scrollableTableRenderer).
 			renderer.WithNodeRenderers(
 				util.Prioritized(exerciseCheckboxRenderer{}, 100),
+				util.Prioritized(scrollableTableRenderer{}, 100),
 			),
 		),
 	)
@@ -159,6 +165,38 @@ func renderExerciseCheckbox(w util.BufWriter, _ []byte, node ast.Node, entering 
 		_, _ = w.WriteString(` checked=""`)
 	}
 	_, _ = w.WriteString("> ")
+	return ast.WalkContinue, nil
+}
+
+func (scrollableTableRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
+	reg.Register(goldmarkeast.KindTable, renderScrollableTable)
+}
+
+// renderScrollableTable reproduces the upstream <table> rendering inside a
+// .table-scroll wrapper.
+//
+// A bare table lays out at its intrinsic width, and a four-column table of API
+// names is routinely wider than a phone viewport. Nothing above it can absorb
+// that: html/body carry overflow-x:hidden, so the excess isn't scrollable, it's
+// clipped — the rightmost columns simply cannot be read. The wrapper owns the
+// overflow instead, so a wide table scrolls within its own block. Being a scroll
+// container also gives it an automatic minimum size of zero, so a wide table can
+// never push the reading column out past the screen (the same property that has
+// always kept <pre> safe here).
+//
+// Server-side rather than a layout.html enhancer: tables need no interactivity,
+// this keeps them working with JS off, and it covers the Ask answers too, since
+// those are rendered through this same function and injected as HTML.
+func renderScrollableTable(w util.BufWriter, _ []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	if !entering {
+		_, _ = w.WriteString("</table></div>\n")
+		return ast.WalkContinue, nil
+	}
+	_, _ = w.WriteString(`<div class="table-scroll"><table`)
+	if node.Attributes() != nil {
+		goldmarkhtml.RenderAttributes(w, node, extension.TableAttributeFilter)
+	}
+	_, _ = w.WriteString(">\n")
 	return ast.WalkContinue, nil
 }
 

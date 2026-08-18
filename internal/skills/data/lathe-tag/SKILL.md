@@ -1,6 +1,7 @@
 ---
 name: lathe-tag
 description: Pick or backfill the search tags on a stored Lathe tutorial, in session. Use when the user invokes /lathe-tag with a slug like "/lathe-tag digital-synth-zig" to choose good tags for the `lathe serve` search and tag filters, or to backfill tags on a tutorial that has none.
+tags: [skill, lathe]
 ---
 
 # Lathe — Tag a Tutorial

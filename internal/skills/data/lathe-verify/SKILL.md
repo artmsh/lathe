@@ -1,6 +1,7 @@
 ---
 name: lathe-verify
 description: Verify that a stored Lathe tutorial actually works by following it end to end in a fresh scratch dir, in session. Use when the user invokes /lathe-verify with a slug like "/lathe-verify digital-synth-zig" (the "Verify this tutorial" button in `lathe serve` hands you that command).
+tags: [skill, lathe]
 ---
 
 # Lathe — Verify a Tutorial

@@ -1,6 +1,7 @@
 ---
 name: lathe-voice
 description: Author a custom writing voice for Lathe tutorials, in session, then persist it via the CLI. Use when the user invokes /lathe-voice (optionally with a name like "/lathe-voice terse") to craft a new tone/register preset that /lathe can generate in.
+tags: [skill, lathe]
 ---
 
 # Lathe — Author a Voice

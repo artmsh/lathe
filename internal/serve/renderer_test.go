@@ -56,6 +56,28 @@ func TestRenderTable(t *testing.T) {
 	}
 }
 
+// A table wider than the viewport must be scrollable inside its own block —
+// html/body carry overflow-x:hidden, so an unwrapped table has its rightmost
+// columns clipped away unreachably on a phone.
+func TestRenderTableWrappedForHorizontalScroll(t *testing.T) {
+	src := []byte("| Approach | Composes |\n|---|---|\n| Blocking | no |\n")
+	out, err := serve.RenderMarkdown(src)
+	if err != nil {
+		t.Fatalf("RenderMarkdown() error = %v", err)
+	}
+	html := string(out)
+
+	if !strings.Contains(html, `<div class="table-scroll"><table>`) {
+		t.Errorf("table not wrapped in .table-scroll, got:\n%s", html)
+	}
+	if !strings.Contains(html, "</table></div>") {
+		t.Errorf(".table-scroll wrapper not closed after </table>, got:\n%s", html)
+	}
+	if n := strings.Count(html, "table-scroll"); n != 1 {
+		t.Errorf("expected exactly 1 .table-scroll wrapper, got %d:\n%s", n, html)
+	}
+}
+
 func TestRenderMermaidBlock(t *testing.T) {
 	src := []byte("intro paragraph\n\n```mermaid\nflowchart LR\n  A --> B\n  B --> C\n```\n\noutro paragraph\n")
 

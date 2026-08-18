@@ -597,10 +597,12 @@
   })();
 </script>
 <script>
-  // Code-block overflow detection — flips data-overflow on <pre> when the block
-  // is horizontally scrollable, so the inset right-edge fade can hint at it.
+  // Scroll-container overflow detection — flips data-overflow on the scrollable
+  // blocks (<pre>, and the .table-scroll wrappers renderer.go puts around every
+  // table) when they are horizontally scrollable, so the inset right-edge fade
+  // can hint at it.
   (function(){
-    var pres = document.querySelectorAll('pre');
+    var pres = document.querySelectorAll('pre,.table-scroll');
     if (!pres.length) return;
     function check(){
       pres.forEach(function(pre){
@@ -610,6 +612,98 @@
     }
     check();
     window.addEventListener('resize', check);
+  })();
+</script>
+<script>
+  // Copy button on code blocks. Each article <pre> gets wrapped in a relatively
+  // positioned .code-block and a floating Copy button; on touch the button is
+  // always visible, since there is no hover to reveal it.
+  //
+  // The handoff <pre>s (.ask-handoff-cmd / .handoff-cmd) are skipped — they ship
+  // their own Copy button. Exposed as window.latheEnhanceCodeCopy so dynamically
+  // rendered markdown (a worker-answered Ask bubble) can enhance itself; the
+  // data-copy-enhanced guard makes re-runs idempotent.
+  (function(){
+    // navigator.clipboard is undefined outside a secure context — reaching the
+    // server directly over plain http://<lan-ip>:<port> instead of https — and
+    // even where it exists it can reject (unfocused document, denied permission).
+    // Both cases fall through to the off-screen-textarea + execCommand path, in
+    // the form iOS needs (readonly textarea, select() AND setSelectionRange),
+    // restoring whatever the reader had selected afterwards.
+    function copyText(text){
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          return navigator.clipboard.writeText(text).catch(function(){ return legacyCopy(text); });
+        } catch (e) { /* fall through */ }
+      }
+      return legacyCopy(text);
+    }
+
+    function legacyCopy(text){
+      return new Promise(function(resolve, reject){
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '0';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        var sel = document.getSelection();
+        var prev = (sel && sel.rangeCount > 0) ? sel.getRangeAt(0) : null;
+        var ok = false;
+        try {
+          ta.select();
+          ta.setSelectionRange(0, ta.value.length);
+          ok = document.execCommand('copy');
+        } catch (e) { ok = false; }
+        document.body.removeChild(ta);
+        if (sel && prev) { sel.removeAllRanges(); sel.addRange(prev); }
+        ok ? resolve() : reject(new Error('copy unavailable'));
+      });
+    }
+
+    function flash(btn, state, label){
+      btn.dataset.state = state;
+      btn.textContent = label;
+      clearTimeout(btn._resetTimer);
+      btn._resetTimer = setTimeout(function(){
+        delete btn.dataset.state;
+        btn.textContent = 'Copy';
+      }, 1600);
+    }
+
+    function enhance(pre){
+      if (pre.dataset.copyEnhanced) return;
+      if (pre.classList.contains('ask-handoff-cmd') || pre.classList.contains('handoff-cmd')) return;
+      pre.dataset.copyEnhanced = '1';
+
+      var wrap = document.createElement('div');
+      wrap.className = 'code-block';
+      pre.parentNode.insertBefore(wrap, pre);
+      wrap.appendChild(pre);
+
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'code-copy';
+      btn.textContent = 'Copy';
+      btn.setAttribute('aria-label', 'Copy code to clipboard');
+      btn.addEventListener('click', function(){
+        var code = pre.querySelector('code') || pre;
+        var text = code.textContent.replace(/\n+$/, '');
+        copyText(text).then(function(){
+          flash(btn, 'copied', 'Copied');
+        }).catch(function(){
+          flash(btn, 'failed', 'Failed');
+        });
+      });
+      wrap.appendChild(btn);
+    }
+
+    window.latheEnhanceCodeCopy = function(root){
+      var scope = root || document;
+      scope.querySelectorAll('pre').forEach(enhance);
+    };
+    document.querySelectorAll('main pre').forEach(enhance);
   })();
 </script>
 <script>
@@ -812,6 +906,9 @@
               if (data.answerHTML){
                 bubble.classList.add('ask-rich');
                 bubble.innerHTML = data.answerHTML;
+                // A worker answer carries rendered markdown, so any code block
+                // in it gets the same Copy affordance as the article's.
+                if (window.latheEnhanceCodeCopy) window.latheEnhanceCodeCopy(bubble);
               } else {
                 bubble.textContent = data.answer || '(no answer)';
               }

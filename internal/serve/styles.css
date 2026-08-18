@@ -101,6 +101,12 @@
 /* ---- 3. Base ------------------------------------------------------------- */
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{overflow-x:hidden}
+/* Mobile Safari auto-inflates the text of any block it judges "wide" — a <pre>
+   with long lines, a paragraph carrying inline code — and it does so per text
+   run, so a single code block could render its lines at three different sizes on
+   a phone. Pinning the adjustment to 100% ships the authored scale; 100% (not
+   `none`) keeps pinch-zoom and user text scaling working. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 /* In-page anchor clicks (section rail, ToC drawer, series links) glide to the
    target instead of jumping. Disabled for reduced-motion users below. */
 html{scroll-behavior:smooth}
@@ -126,6 +132,9 @@ body{
    layout so the right-edge rail sits in clean gutter space rather than over text. */
 main{
   flex:1;width:100%;max-width:calc(var(--measure) + 7rem);margin-inline:auto;
+  /* Flex items floor at min-content by default; without this an over-wide
+     descendant would stretch the reading column past the viewport. */
+  min-width:0;
   padding:clamp(1.75rem,1.2rem + 2vw,3rem) clamp(1.2rem,.7rem + 2.5vw,2.5rem);
   font-size:1.125rem;line-height:1.7;
 }
@@ -155,6 +164,22 @@ hr{border:none;border-top:1px solid var(--border);margin:2.5rem 0}
 
 img{max-width:100%;height:auto;border-radius:var(--radius-md)}
 
+/* Tables scroll inside their own block rather than off the page. renderer.go
+   wraps every table in .table-scroll; the wrapper owns the horizontal overflow,
+   so the 1.25rem rhythm moves onto it and the table is free to take its
+   intrinsic width and be scrolled to. Without this a wide table overflows into
+   html/body's overflow-x:hidden and its rightmost columns are clipped away
+   unreachably — on a phone always, and on a laptop too once the table is wider
+   than the centred column's leftover margin.
+
+   The wrapper takes the full reading column rather than the --measure bound the
+   bare table carried: that bound could never hold anyway (a table cannot lay out
+   below its min-content width), and the full column matches how <pre> behaves. */
+.table-scroll{max-width:100%;margin:1.25rem 0;overflow-x:auto;overscroll-behavior-x:contain}
+.table-scroll > table{margin:0;max-width:none}
+/* Same right-edge fade the code blocks use to hint at scrollable content. */
+.table-scroll[data-overflow="true"]{box-shadow:inset -18px 0 14px -12px rgba(40,30,20,.20)}
+[data-theme="dark"] .table-scroll[data-overflow="true"]{box-shadow:inset -18px 0 14px -12px rgba(0,0,0,.55)}
 table{border-collapse:collapse;margin:1.25rem 0;font-size:.95em;max-width:var(--measure)}
 th,td{border:1px solid var(--border);padding:.45rem .7rem;text-align:left}
 th{background:var(--surface-sunken);font-family:var(--font-display);font-weight:600;color:var(--text)}
@@ -172,6 +197,27 @@ pre.chroma{background:var(--code-bg)}
    pinned to the visible right edge regardless of scroll position. */
 pre[data-overflow="true"]{box-shadow:inset -18px 0 14px -12px rgba(40,30,20,.20)}
 [data-theme="dark"] pre[data-overflow="true"]{box-shadow:inset -18px 0 14px -12px rgba(0,0,0,.55)}
+
+/* Copy-to-clipboard affordance on code blocks. The script wraps each article
+   <pre> in .code-block and floats the button in the wrapper — NOT inside the
+   <pre>, which is overflow-x:auto and would carry the button off-screen exactly
+   when a reader scrolls a long line. The wrapper is a plain block, so the pre's
+   1.4rem vertical margins still collapse through and the reading rhythm holds.
+   It is always visible rather than hover-revealed: touch has no hover, and the
+   phone is the surface this exists for. It stays quiet (muted ink, low-contrast
+   border) and firms up on hover / focus rather than hiding. */
+.code-block{position:relative}
+.code-copy{position:absolute;top:.45rem;right:.45rem;z-index:2;display:inline-flex;align-items:center;justify-content:center;min-width:2.5rem;min-height:2.5rem;padding:.3rem .6rem;font-family:var(--font-display);font-size:.72rem;font-weight:600;line-height:1;color:var(--text-subtle);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:opacity var(--transition),background var(--transition),color var(--transition),border-color var(--transition)}
+.code-copy:hover{background:var(--surface-sunken);color:var(--text);border-color:var(--border-strong)}
+.code-copy:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.code-copy[data-state="copied"]{color:var(--accent);background:var(--accent-soft);border-color:var(--accent)}
+.code-copy[data-state="failed"]{color:var(--badge-failed-text);background:var(--badge-failed-bg);border-color:var(--badge-failed-text)}
+/* Quiet at rest on pointer devices, where the code is not being touched; it
+   never drops below a readable contrast, so it stays discoverable. */
+@media (hover:hover) and (pointer:fine){
+  .code-copy{opacity:.55}
+  .code-block:hover .code-copy,.code-block:focus-within .code-copy,.code-copy:hover,.code-copy:focus-visible,.code-copy[data-state]{opacity:1}
+}
 
 /* Callouts (emitted by renderer.go as <aside class="callout callout-TYPE">) */
 .callout{margin:1.6rem 0;padding:.9rem 1.1rem .95rem;border-left:3px solid;border-radius:var(--radius-md)}
@@ -583,6 +629,13 @@ body.list h1{font-family:var(--font-display);font-size:clamp(1.7rem,1.3rem + 1.4
   #sidebar{display:flex;position:fixed;top:0;left:0;height:100vh;width:min(280px,82vw);transform:translateX(-100%);transition:transform 200ms ease-out}
   [data-sidebar="open"] #sidebar{transform:translateX(0)}
   [data-sidebar="open"] #sidebarBackdrop{display:block}
+  /* The copy button gets its own strip above the code rather than floating over
+     the first line. Overlaid, it covers ~6 characters of a ~36-character line on
+     a phone — and first lines (imports, signatures, the command to run) are the
+     ones most worth reading. It also runs at full opacity here, since there is
+     no hover to reveal it. */
+  .code-block > pre{padding-top:3rem}
+  .code-copy{top:.5rem;min-height:2.25rem;font-size:.7rem;padding:.25rem .5rem}
   main{max-width:none;padding-bottom:5.5rem}
   #tocRail{display:none}
   #hamburger{display:inline-flex}
@@ -610,3 +663,11 @@ body.list h1{font-family:var(--font-display);font-size:clamp(1.7rem,1.3rem + 1.4
   .tutorial{flex-direction:column;align-items:stretch}
   .tutorial-actions{justify-content:space-between}
 }
+
+/* Wide desktop: spend some of the empty gutter on the reading column. 66ch is
+   the comfortable default, but on a 1200px+ screen it leaves most of the window
+   unused while tables and diagrams — the widest things a tutorial has — scroll
+   inside a column narrower than they need. Two modest steps rather than one big
+   one, so the measure only grows where there is actually room for it. */
+@media (min-width:1200px){:root{--measure:72ch}}
+@media (min-width:1600px){:root{--measure:78ch}}
