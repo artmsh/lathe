@@ -166,12 +166,16 @@ I'm glad you asked! The lathe skills and CLI were built in tandem to offer (what
 
 ## Writing voices
 
-Every tutorial is written in a **voice**. A voice controls *how the prose sounds* but it doesn't change accuracy, research, citation, verification, or structure, which are fixed. Two voices ship with lathe:
+Every tutorial is written in a **voice**. A voice controls *how the prose sounds* but it doesn't change accuracy, research, citation, verification, or structure, which are fixed. Three voices ship with lathe:
 
 - **`plainspoken`** (the default) — honest and precise, with no invented persona
   or fabricated first-person war stories. It's written to avoid anthropomorphizing
   the LLM that produced it.
 - **`companion`** — an attempt at a warm, wry, first-person "friend at the keyboard".
+- **`principal`** — dense and laconic, for a reader who has shipped production
+  systems. No warm-up, no recap, no explaining what the reader's job title implies
+  they know; rationale in one clause; a table or diagram wherever the subject has
+  structure, instead of a paragraph describing it.
 
 Pick one per run by naming it in your `/lathe` invocation (*"…in the companion
 voice"*), or change the global default:
