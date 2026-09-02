@@ -302,3 +302,20 @@ func TestVerifyRejectsCrossOrigin(t *testing.T) {
 		t.Errorf("cross-origin verify = %d, want 403", w.Code)
 	}
 }
+
+// A cross-origin page must not be able to claim (and thereby steal) a queued job
+// from the real worker — GET /-/work dequeues, so it is state-changing despite
+// the verb. The CLI worker sends no Origin header and stays admitted.
+func TestWorkNextRejectsCrossOrigin(t *testing.T) {
+	srv := serve.NewServer(t.TempDir())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/-/work", nil).WithContext(ctx)
+	req.Header.Set("Origin", "http://evil.example")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin GET /-/work = %d, want 403", w.Code)
+	}
+}

@@ -19,7 +19,18 @@ const workLongPoll = 50 * time.Second
 // presence (so the enqueue-vs-handoff branch knows a worker is live), then blocks
 // up to workLongPoll for a queued job. It returns the claimed job as JSON, or 204
 // No Content when the window lapses with nothing queued.
+//
+// Claiming a job dequeues it, so this GET mutates state and carries the same
+// sameOrigin guard as the POST endpoints. The worker is the CLI, which sends no
+// Origin header, so the guard admits it (local or remote) while rejecting a
+// cross-site page that would otherwise steal jobs from the real worker over a
+// widened --bind. Genuinely read-only GETs stay open so tutorials remain
+// readable across the LAN.
 func (s *Server) handleWorkNext(w http.ResponseWriter, r *http.Request) {
+	if !sameOrigin(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	s.queue.MarkWorkerSeen()
 
 	ctx, cancel := context.WithTimeout(r.Context(), workLongPoll)

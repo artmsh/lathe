@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
@@ -19,9 +20,11 @@ import (
 )
 
 var (
-	servePort    int
-	serveBind    string
-	publicOrigin string
+	servePort         int
+	serveBind         string
+	publicOrigin      string
+	serveNoOpen       bool
+	serveTutorialsDir string
 )
 
 var serveCmd = &cobra.Command{
@@ -36,7 +39,7 @@ var serveCmd = &cobra.Command{
 			serve.PublicHost = u.Hostname()
 		}
 
-		dir, err := config.TutorialsDir()
+		dir, err := tutorialsDirForServe()
 		if err != nil {
 			return err
 		}
@@ -64,8 +67,10 @@ var serveCmd = &cobra.Command{
 		// see the worker-bridge note in AGENTS.md).
 		fmt.Println("Live mode: run /lathe-work in your coding agent to drive Ask/Verify/Extend here (otherwise the buttons hand you a command to paste).")
 		// Skip the browser pop for a public/daemon deploy — there's no desktop
-		// session to open a tab in.
-		if publicOrigin == "" {
+		// session to open a tab in. --no-open says the same thing explicitly, for
+		// the deploys that widen --bind or run under a supervisor without ever
+		// naming a public origin.
+		if publicOrigin == "" && !serveNoOpen {
 			openBrowser(localURL)
 		}
 
@@ -103,6 +108,30 @@ var serveCmd = &cobra.Command{
 	},
 }
 
+// tutorialsDirForServe resolves the directory `serve` reads tutorials from.
+// Default is ~/.lathe/tutorials (created on demand); --tutorials-dir /
+// $LATHE_TUTORIALS_DIR points it at an existing directory instead, so a daemon
+// deploy can serve a synced or mounted library without depending on ~/.lathe.
+// An override must already exist — silently creating an empty directory would
+// turn a typo'd path into an empty library rather than an error.
+func tutorialsDirForServe() (string, error) {
+	if serveTutorialsDir == "" {
+		return config.TutorialsDir()
+	}
+	dir, err := filepath.Abs(serveTutorialsDir)
+	if err != nil {
+		return "", fmt.Errorf("--tutorials-dir: %w", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return "", fmt.Errorf("--tutorials-dir: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("--tutorials-dir: not a directory: %s", dir)
+	}
+	return dir, nil
+}
+
 func openBrowser(url string) {
 	var bin string
 	switch runtime.GOOS {
@@ -122,5 +151,7 @@ func init() {
 	serveCmd.Flags().IntVar(&servePort, "port", 4242, "port to listen on")
 	serveCmd.Flags().StringVar(&serveBind, "bind", "127.0.0.1", "address to listen on (widen only behind a reverse proxy that owns auth)")
 	serveCmd.Flags().StringVar(&publicOrigin, "public-origin", "", "public URL this server is reverse-proxied at (e.g. https://lathe.lan); required for state-changing requests to pass the same-origin check when --bind is not loopback")
+	serveCmd.Flags().BoolVar(&serveNoOpen, "no-open", false, "don't open a browser on start (implied by --public-origin)")
+	serveCmd.Flags().StringVar(&serveTutorialsDir, "tutorials-dir", os.Getenv("LATHE_TUTORIALS_DIR"), "directory to serve tutorials from (default ~/.lathe/tutorials; overrides $LATHE_TUTORIALS_DIR)")
 	rootCmd.AddCommand(serveCmd)
 }
