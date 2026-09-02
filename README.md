@@ -200,6 +200,26 @@ As your library grows, the web list page (`lathe serve`) has a search box and fi
 
 Default port is `4242`; override with `--port`.
 
+### Serving options
+
+`lathe serve` is meant for one person on one machine, and its defaults say so: it binds loopback only, and it has no authentication of any kind while exposing a destructive delete endpoint. The remaining flags exist for the case where that isn't quite the shape you need.
+
+| Flag | Default | What it's for |
+| --- | --- | --- |
+| `--port` | `4242` | Listen on a different port. |
+| `--tutorials-dir` | `~/.lathe/tutorials` | Serve a library from somewhere else — a synced directory, a mounted volume, a per-project checkout. The directory must already exist; a typo'd path is an error rather than a silently empty library. Also reads `$LATHE_TUTORIALS_DIR`. |
+| `--no-open` | off | Don't pop a browser on start. Implied by `--public-origin`; name it explicitly when running under a supervisor or in a container, where there's no desktop session to open a tab in. |
+| `--bind` | `127.0.0.1` | Widen the listen address. **Only** do this behind a reverse proxy that owns authentication — the server itself has none. |
+| `--public-origin` | none | The URL a reverse proxy advertises this server at, e.g. `https://lathe.lan`. Required alongside a widened `--bind` so that state-changing requests pass the same-origin check. |
+
+A daemon deployment therefore looks like:
+
+```bash
+lathe serve --bind 0.0.0.0 --public-origin https://lathe.lan --tutorials-dir /srv/tutorials
+```
+
+Read-only GETs stay open regardless, so tutorials remain readable across the LAN. The endpoints that change something — verify, extend, delete, drift, and the job-claim endpoint the worker polls — are all behind the same-origin check. `lathe work` sends no `Origin` header, so a worker on any host still gets through while a cross-site page in someone's browser does not.
+
 ## Storage layout
 
 Tutorials live globally in `~/.lathe/tutorials/`, one directory per slug:
