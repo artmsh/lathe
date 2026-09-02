@@ -4,3 +4,7 @@
 .claude/
 # GoReleaser build output
 /dist/
+
+# nix-build / nix build output symlink
+/result
+/result-*

@@ -74,6 +74,32 @@ curl -sSf https://raw.githubusercontent.com/devenjarvis/lathe/main/install.sh | 
 go install github.com/devenjarvis/lathe@latest
 ```
 
+**Nix** (this fork ships `package.nix`):
+
+```bash
+nix-build            # ./result/bin/lathe
+nix-shell            # the full `mage check` toolchain: Go, mage, golangci-lint, git
+```
+
+To use it from a NixOS or nix-darwin config, pin a checkout and `callPackage`
+it. Pass the same `rev` you pinned and the binary stamps it into
+`lathe --version`:
+
+```nix
+let
+  src = pkgs.fetchFromGitHub {
+    owner = "artmsh";
+    repo = "lathe";
+    rev = "<full sha>";
+    hash = "sha256-...";
+  };
+  lathe = pkgs.callPackage "${src}/package.nix" { inherit (src) rev; };
+in
+  { environment.systemPackages = [ lathe ]; }
+```
+
+`package.nix` takes no nixpkgs of its own, so the pin stays yours.
+
 **From source:**
 
 ```bash
