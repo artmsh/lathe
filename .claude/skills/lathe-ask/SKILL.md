@@ -1,6 +1,7 @@
 ---
 name: lathe-ask
 description: Answer a reader's question about a specific part of a Lathe tutorial, in session. Use when the user invokes /lathe-ask with a slug and part like "/lathe-ask digital-synth-zig part-02.md" followed by the question on the next line (the "Ask" button in `lathe serve` pastes exactly this).
+tags: [skill, lathe]
 ---
 
 # Lathe — Ask About a Part

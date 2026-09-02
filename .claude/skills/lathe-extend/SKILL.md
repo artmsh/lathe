@@ -1,6 +1,7 @@
 ---
 name: lathe-extend
 description: Write the next part of an existing Lathe tutorial, in session. Use when the user invokes /lathe-extend with a slug like "/lathe-extend digital-synth-zig" (the "Add a new part" button in `lathe serve` hands you that command), optionally followed by guidance for where the part should go.
+tags: [skill, lathe]
 ---
 
 # Lathe — Extend a Tutorial

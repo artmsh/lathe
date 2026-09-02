@@ -1,6 +1,7 @@
 ---
 name: lathe-onboard
 description: Generate a hands-on onboarding guide for an existing git repository, anchored to a pinned commit so drift can be detected later. Use when the user invokes /lathe-onboard with a path or no argument, like "/lathe-onboard ~/Code/lathe" or just "/lathe-onboard" in the repo they want a guide for.
+tags: [skill, lathe]
 ---
 
 # Lathe — Onboard to a Codebase

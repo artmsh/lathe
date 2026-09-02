@@ -1,6 +1,7 @@
 ---
 name: lathe-work
 description: Run the Lathe worker loop so the web UI's Ask / Verify / Add-a-part buttons drive work directly in this session instead of handing back a command to paste. Use when the user invokes /lathe-work (start it once per session while `lathe serve` is running). Works in any coding agent.
+tags: [skill, lathe]
 ---
 
 # Lathe — Worker Loop
