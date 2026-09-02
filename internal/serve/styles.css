@@ -33,6 +33,7 @@
   --badge-failed-bg:#F4DCD2; --badge-failed-text:#963517;
   --badge-extending-bg:#DDE5E8; --badge-extending-text:#3F5A66;
   --badge-skipped-bg:#ECE3D5; --badge-skipped-text:#6B5F53;
+  --badge-stale-bg:#EDE4EF; --badge-stale-text:#7A5A82;
 
   /* Callouts (light) — bg / border / label */
   --callout-note-bg:#E8EDF1; --callout-note-border:#6B8CAE; --callout-note-label:#3F5E80;
@@ -43,6 +44,9 @@
   --callout-predict-bg:#F1E5EA; --callout-predict-border:#A86A86; --callout-predict-label:#7A4458;
   --callout-recall-bg:#F7E7D6; --callout-recall-border:#D17A3F; --callout-recall-label:#A0501F;
   --callout-unverified-bg:#F6E2DA; --callout-unverified-border:#C2603C; --callout-unverified-label:#8A3417;
+
+  /* Anchored code excerpts (light) — the path:line header above a repo excerpt */
+  --anchor-border:#D6C9B4; --anchor-label:#6B5F53;
 
   /* Type */
   --font-display:'Fraunces','Iowan Old Style',Georgia,serif;
@@ -75,6 +79,7 @@
   --badge-failed-bg:#3A241B; --badge-failed-text:#E89A7C;
   --badge-extending-bg:#1E2B2C; --badge-extending-text:#79B0AE;
   --badge-skipped-bg:#2A2218; --badge-skipped-text:#9C8F7C;
+  --badge-stale-bg:#2A222C; --badge-stale-text:#C4A3CB;
 
   --callout-note-bg:#182430; --callout-note-border:#4E7090; --callout-note-label:#8DAFC9;
   --callout-tip-bg:#1E2A18; --callout-tip-border:#6E8A42; --callout-tip-label:#A8C07A;
@@ -84,6 +89,8 @@
   --callout-predict-bg:#2A1E26; --callout-predict-border:#9A6076; --callout-predict-label:#D6A6BC;
   --callout-recall-bg:#2C1E12; --callout-recall-border:#BE7038; --callout-recall-label:#E0A36A;
   --callout-unverified-bg:#2E1810; --callout-unverified-border:#C2603C; --callout-unverified-label:#EC9272;
+
+  --anchor-border:#3D3429; --anchor-label:#9C8F7C;
 
   --shadow-sm:0 1px 2px rgba(0,0,0,.30);
   --shadow-md:0 4px 14px rgba(0,0,0,.45);
@@ -241,6 +248,14 @@ pre[data-overflow="true"]{box-shadow:inset -18px 0 14px -12px rgba(40,30,20,.20)
 .callout-unverified{background:var(--callout-unverified-bg);border-color:var(--callout-unverified-border)}
 .callout-unverified .callout-label{color:var(--callout-unverified-label)}
 
+/* Anchored code excerpts. An anchor ties a quoted block to a real file in the
+   repo an onboarding guide describes; the header is a copyable path:line and the
+   data-path/data-lines attributes are what `lathe drift` reports against. The
+   container is deliberately quiet — it must not out-shout the code inside it. */
+.anchor{margin:1.4rem 0}
+.anchor pre{margin-top:0;border-top-left-radius:0;border-top-right-radius:0}
+.anchor-path{font-family:var(--font-mono);font-size:.72rem;color:var(--anchor-label);background:var(--surface-sunken);border:1px solid var(--anchor-border);border-bottom:none;border-radius:var(--radius-md) var(--radius-md) 0 0;padding:.35rem .75rem;margin:0;overflow-wrap:anywhere;user-select:all}
+
 /* Mermaid diagrams */
 .mermaid{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;margin:1.4rem 0;text-align:center;overflow-x:auto;max-width:100%}
 .mermaid:not([data-processed]){font-family:var(--font-mono);font-size:.8rem;text-align:left;white-space:pre;color:var(--text-faint)}
@@ -260,6 +275,7 @@ pre[data-overflow="true"]{box-shadow:inset -18px 0 14px -12px rgba(40,30,20,.20)
 .badge.failed .badge-dot{background:var(--badge-failed-text)}
 .badge.extending .badge-dot{background:var(--badge-extending-text)}
 .badge.skipped .badge-dot{background:var(--badge-skipped-text)}
+.badge.stale .badge-dot{background:var(--badge-stale-text)}
 /* In-flight states get a gentle pulse; stilled for reduced-motion users. */
 .badge.verifying .badge-dot,.badge.extending .badge-dot{animation:badge-pulse 1.6s ease-in-out infinite}
 @keyframes badge-pulse{0%,100%{opacity:1}50%{opacity:.35}}
