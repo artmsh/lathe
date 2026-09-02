@@ -82,18 +82,23 @@ nix-shell            # the full `mage check` toolchain: Go, mage, golangci-lint,
 ```
 
 To use it from a NixOS or nix-darwin config, pin a checkout and `callPackage`
-it. Pass the same `rev` you pinned and the binary stamps it into
-`lathe --version`:
+it. Pass the same `rev` and the binary stamps it into `lathe --version`:
 
 ```nix
 let
-  src = pkgs.fetchFromGitHub {
-    owner = "artmsh";
-    repo = "lathe";
-    rev = "<full sha>";
-    hash = "sha256-...";
+  rev = "<full sha>";
+  # builtins.fetchTarball, not pkgs.fetchFromGitHub: package.nix is *imported*,
+  # and importing from a derivation's output makes it an IFD evaluation. The
+  # builtin fetcher runs at eval time and hands back a plain path.
+  src = builtins.fetchTarball {
+    url = "https://github.com/artmsh/lathe/archive/${rev}.tar.gz";
+    # nix-prefetch-url --unpack https://github.com/artmsh/lathe/archive/<rev>.tar.gz
+    sha256 = "...";
   };
-  lathe = pkgs.callPackage "${src}/package.nix" { inherit (src) rev; };
+  lathe = pkgs.callPackage "${src}/package.nix" {
+    buildGoModule = pkgs.buildGo125Module or pkgs.buildGoModule;
+    inherit rev;
+  };
 in
   { environment.systemPackages = [ lathe ]; }
 ```
