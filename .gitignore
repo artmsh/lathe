@@ -1,3 +1,5 @@
+.agents/
+skills-lock.json
 .superpowers/
 /lathe
 /lathe-local
@@ -8,3 +10,4 @@
 # nix-build / nix build output symlink
 /result
 /result-*
+__pycache__/
