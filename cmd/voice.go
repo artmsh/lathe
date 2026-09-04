@@ -65,9 +65,13 @@ var voiceShowCmd = &cobra.Command{
 		"skills use.",
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name, err := resolveShowName(args, voiceShowTutorial)
+		name, snapshot, err := resolveShow(args, voiceShowTutorial)
 		if err != nil {
 			return err
+		}
+		if snapshot != "" {
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), voice.Preamble+snapshot)
+			return nil
 		}
 		v, err := voice.Resolve(name)
 		if err != nil {
@@ -78,31 +82,39 @@ var voiceShowCmd = &cobra.Command{
 	},
 }
 
+// resolveShow returns the selected voice name and, for a tutorial that carries
+// one, its snapshotted spec. An explicit name always resolves against the live
+// catalog; only --tutorial uses the durable snapshot.
+func resolveShow(args []string, tutorialSlug string) (string, string, error) {
+	if len(args) == 1 {
+		return args[0], "", nil
+	}
+	if tutorialSlug != "" {
+		if err := validateSlug(tutorialSlug); err != nil {
+			return "", "", err
+		}
+		tutorialsDir, err := config.TutorialsDir()
+		if err != nil {
+			return "", "", err
+		}
+		tut, err := store.ReadMetadata(filepath.Join(tutorialsDir, tutorialSlug))
+		if err != nil {
+			return "", "", fmt.Errorf("read metadata for %q: %w", tutorialSlug, err)
+		}
+		if tut.Voice != "" {
+			return tut.Voice, tut.VoiceSpec, nil
+		}
+		// Pre-feature tutorial with no recorded voice → fall back to the default.
+	}
+	return config.DefaultVoice(), "", nil
+}
+
 // resolveShowName decides which voice `voice show` should print, in priority
 // order: an explicit name argument, then the voice recorded on --tutorial (or
 // the default if that tutorial has none), then the configured default.
 func resolveShowName(args []string, tutorialSlug string) (string, error) {
-	if len(args) == 1 {
-		return args[0], nil
-	}
-	if tutorialSlug != "" {
-		if err := validateSlug(tutorialSlug); err != nil {
-			return "", err
-		}
-		tutorialsDir, err := config.TutorialsDir()
-		if err != nil {
-			return "", err
-		}
-		tut, err := store.ReadMetadata(filepath.Join(tutorialsDir, tutorialSlug))
-		if err != nil {
-			return "", fmt.Errorf("read metadata for %q: %w", tutorialSlug, err)
-		}
-		if tut.Voice != "" {
-			return tut.Voice, nil
-		}
-		// Pre-feature tutorial with no recorded voice → fall back to the default.
-	}
-	return config.DefaultVoice(), nil
+	name, _, err := resolveShow(args, tutorialSlug)
+	return name, err
 }
 
 var voiceSetDefaultCmd = &cobra.Command{

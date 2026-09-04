@@ -75,6 +75,50 @@ func TestVoiceShowCmdPrintsWrappedSpec(t *testing.T) {
 	}
 }
 
+func TestVoiceSpecForStoreCapturesCustomBody(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	spec := []byte("---\nname: portable\ndescription: test voice\n---\n\n# Portable\n\nCustom body.\n")
+	if err := voice.Add("portable", spec); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	got := voiceSpecForStore("portable")
+	if strings.Contains(got, "description:") || !strings.Contains(got, "# Portable") {
+		t.Errorf("voiceSpecForStore() = %q, want frontmatter-free custom body", got)
+	}
+}
+
+func TestVoiceShowTutorialUsesSnapshotWhenCustomVoiceIsUnavailable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home) // no custom voice is installed in this HOME
+	tutDir := filepath.Join(home, ".lathe", "tutorials", "portable")
+	if err := os.MkdirAll(tutDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	tut := &store.Tutorial{
+		Slug:      "portable",
+		Title:     "Portable",
+		Status:    store.StatusUnverified,
+		Voice:     "my-custom-voice",
+		VoiceSpec: "# My Custom Voice\n\nPortable spec.",
+	}
+	if err := store.WriteMetadata(tutDir, tut); err != nil {
+		t.Fatal(err)
+	}
+
+	oldTutorial := voiceShowTutorial
+	voiceShowTutorial = "portable"
+	t.Cleanup(func() { voiceShowTutorial = oldTutorial })
+	var out bytes.Buffer
+	voiceShowCmd.SetOut(&out)
+	t.Cleanup(func() { voiceShowCmd.SetOut(nil) })
+	if err := voiceShowCmd.RunE(voiceShowCmd, nil); err != nil {
+		t.Fatalf("voice show --tutorial portable: %v", err)
+	}
+	if !strings.HasPrefix(out.String(), voice.Preamble) || !strings.Contains(out.String(), "Portable spec.") {
+		t.Errorf("voice show should print the wrapped snapshot, got %q", out.String())
+	}
+}
+
 func TestVoiceRmResetsDefaultWhenRemovingTheDefault(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 

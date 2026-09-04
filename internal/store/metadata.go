@@ -110,6 +110,13 @@ type Tutorial struct {
 	// Populated via `lathe store --voice`; the skill never writes metadata.json
 	// directly.
 	Voice string `json:"voice,omitempty"`
+	// VoiceSpec snapshots the selected voice's markdown body at store time. This
+	// keeps custom voice disclosure (and later extension) portable when a
+	// tutorial library is served or copied to a machine that does not have the
+	// author's ~/.lathe/voices directory. Empty preserves compatibility with
+	// tutorials stored before voice snapshots existed; callers may fall back to
+	// resolving Voice from the current installation.
+	VoiceSpec string `json:"voice_spec,omitempty"`
 	// Model is the free-form display label of the LLM that authored the tutorial
 	// (e.g. "Claude Opus 4.8"), shown in the byline on the served reading page.
 	// Populated via `lathe store --model` (and refreshed by `lathe extend-commit

@@ -24,7 +24,10 @@ type StoreOptions struct {
 	Branch  string   // branch the tutorial targets (only meaningful with Repo)
 	Tools   []Tool   // languages/tools + versions (NormalizeTools)
 	Voice   string   // writing voice the tutorial was generated in (NormalizeVoice)
-	Model   string   // LLM that authored the tutorial, a display label (NormalizeModel)
+	// VoiceSpec is the selected voice's frontmatter-free markdown body. The CLI
+	// snapshots it so custom voices travel with copied or remotely served guides.
+	VoiceSpec string
+	Model     string // LLM that authored the tutorial, a display label (NormalizeModel)
 	// Kind selects the guide shape. The zero value stores as KindTutorial.
 	Kind Kind
 	// RepoCommit is the SHA an onboarding guide's anchors are pinned to, and
@@ -117,6 +120,7 @@ func Store(srcPath string, opts StoreOptions) (*Tutorial, error) {
 		Tools:      NormalizeTools(opts.Tools),
 		Sources:    NormalizeSources(opts.Sources),
 		Voice:      NormalizeVoice(opts.Voice),
+		VoiceSpec:  strings.TrimSpace(opts.VoiceSpec),
 		Model:      NormalizeModel(opts.Model),
 	}
 

@@ -68,6 +68,22 @@ func TestResolveUnknownErrors(t *testing.T) {
 	}
 }
 
+func TestResolveCustomFromDir(t *testing.T) {
+	withTempHome(t) // prove the explicit directory does not depend on HOME
+	dir := t.TempDir()
+	spec := []byte("---\nname: portable\ndescription: test\n---\n\n# Portable\n")
+	if err := os.WriteFile(filepath.Join(dir, "portable.md"), spec, 0644); err != nil {
+		t.Fatal(err)
+	}
+	v, err := voice.ResolveCustomFromDir("Portable", dir)
+	if err != nil {
+		t.Fatalf("ResolveCustomFromDir: %v", err)
+	}
+	if v.Builtin || v.Name != "portable" || !strings.Contains(v.Body(), "# Portable") {
+		t.Errorf("ResolveCustomFromDir() = %+v, want custom portable voice", v)
+	}
+}
+
 func TestWrappedHasPreamble(t *testing.T) {
 	withTempHome(t)
 	v, err := voice.Resolve("plainspoken")

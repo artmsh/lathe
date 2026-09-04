@@ -609,6 +609,80 @@ func TestBylineDegradesWhenVoiceUnresolved(t *testing.T) {
 	}
 }
 
+func TestBylineShowsSnapshottedCustomVoiceWhenUnresolved(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // the custom voice deliberately is not installed here
+	tutDir := filepath.Join(dir, "portable")
+	if err := os.MkdirAll(tutDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tutDir, "part-01.md"), []byte("# Portable"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	tut := &store.Tutorial{
+		Slug:      "portable",
+		Title:     "Portable",
+		Status:    store.StatusUnverified,
+		Parts:     []string{"part-01.md"},
+		Voice:     "my-custom-voice",
+		VoiceSpec: "# My Custom Voice\n\nShort paragraphs and sharp edges.",
+		Model:     "Claude Opus 4.8",
+	}
+	if err := store.WriteMetadata(tutDir, tut); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := serve.NewServer(dir)
+	req := httptest.NewRequest(http.MethodGet, "/portable/part-01.md", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	header := articleHeader(t, w.Body.String())
+	if !strings.Contains(header, `class="voice-reveal"`) {
+		t.Errorf("byline missing reveal for snapshotted custom voice; header:\n%s", header)
+	}
+	if !strings.Contains(header, ">My Custom Voice</h1>") || !strings.Contains(header, "Short paragraphs and sharp edges.") {
+		t.Errorf("byline missing rendered custom voice snapshot; header:\n%s", header)
+	}
+}
+
+func TestBylineFindsLegacyCustomVoiceBesideTutorialLibrary(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // voice exists only beside the mounted library
+	tutorialsDir := filepath.Join(root, "tutorials")
+	tutDir := filepath.Join(tutorialsDir, "legacy-custom")
+	voicesDir := filepath.Join(root, "voices")
+	if err := os.MkdirAll(tutDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(voicesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tutDir, "part-01.md"), []byte("# Legacy"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(voicesDir, "legacy.md"), []byte("---\nname: legacy\n---\n\n# Legacy Voice\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	tut := &store.Tutorial{
+		Slug: "legacy-custom", Title: "Legacy Custom", Status: store.StatusUnverified,
+		Parts: []string{"part-01.md"}, Voice: "legacy", Model: "Claude Opus 4.8",
+	}
+	if err := store.WriteMetadata(tutDir, tut); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := serve.NewServer(tutorialsDir)
+	req := httptest.NewRequest(http.MethodGet, "/legacy-custom/part-01.md", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	header := articleHeader(t, w.Body.String())
+	if !strings.Contains(header, `class="voice-reveal"`) || !strings.Contains(header, ">Legacy Voice</h1>") {
+		t.Errorf("byline should resolve legacy custom voice beside tutorial library; header:\n%s", header)
+	}
+}
+
 func TestSeriesPartPage(t *testing.T) {
 	dir := t.TempDir()
 	makeTestTutorial(t, dir, "test-series", true)

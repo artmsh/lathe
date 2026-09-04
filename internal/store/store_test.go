@@ -170,12 +170,18 @@ func TestStorePersistsAndNormalizesVoice(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	tut, err := store.Store(src, store.StoreOptions{Voice: "  Companion  "})
+	tut, err := store.Store(src, store.StoreOptions{
+		Voice:     "  Companion  ",
+		VoiceSpec: "\n# Companion\n\nWarm and direct.\n",
+	})
 	if err != nil {
 		t.Fatalf("Store() error = %v", err)
 	}
 	if tut.Voice != "companion" {
 		t.Errorf("Store() Voice = %q, want %q", tut.Voice, "companion")
+	}
+	if tut.VoiceSpec != "# Companion\n\nWarm and direct." {
+		t.Errorf("Store() VoiceSpec = %q, want trimmed snapshot", tut.VoiceSpec)
 	}
 	read, err := store.ReadMetadata(filepath.Join(home, ".lathe", "tutorials", tut.Slug))
 	if err != nil {
@@ -183,6 +189,9 @@ func TestStorePersistsAndNormalizesVoice(t *testing.T) {
 	}
 	if read.Voice != "companion" {
 		t.Errorf("ReadMetadata() Voice = %q, want companion", read.Voice)
+	}
+	if read.VoiceSpec != tut.VoiceSpec {
+		t.Errorf("ReadMetadata() VoiceSpec = %q, want %q", read.VoiceSpec, tut.VoiceSpec)
 	}
 }
 

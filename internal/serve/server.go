@@ -502,16 +502,31 @@ func (s *Server) renderPart(w http.ResponseWriter, tut *store.Tutorial, tutDir, 
 	// metadata bookkeeping.
 	unverifiedCount := bytes.Count(content, []byte("callout-unverified"))
 
-	// Render the voice spec body (markdown) for the byline's inline reveal.
-	// Best-effort and only for voiced tutorials: a deleted/unresolvable custom
-	// voice — or a spec that fails to render — yields empty HTML, so the byline
-	// still shows the name but renders no <details>. Pre-feature tutorials (empty
-	// Voice) get no reveal — the byline shows the model only, matching the old
-	// footer behavior.
+	// Render the voice spec body (markdown) for the byline's inline reveal. New
+	// tutorials carry a snapshot so custom voices remain available when their
+	// library is copied or served under another HOME. Older tutorials fall back
+	// to the current voice catalog. A deleted/unresolvable legacy custom voice —
+	// or a spec that fails to render — yields empty HTML, so the byline still
+	// shows the name but renders no <details>.
 	var voiceSpec template.HTML
 	if tut.Voice != "" {
-		if v, err := voice.Resolve(tut.Voice); err == nil {
-			if rendered, rerr := RenderMarkdown([]byte(v.Body())); rerr == nil {
+		spec := tut.VoiceSpec
+		if spec == "" {
+			if v, err := voice.Resolve(tut.Voice); err == nil {
+				spec = v.Body()
+			}
+		}
+		if spec == "" {
+			// A --tutorials-dir library commonly has its voices directory beside
+			// tutorials. This keeps pre-snapshot custom voices working when that
+			// whole library is mounted under a service account with another HOME.
+			voicesDir := filepath.Join(filepath.Dir(s.tutorialsDir), "voices")
+			if v, err := voice.ResolveCustomFromDir(tut.Voice, voicesDir); err == nil {
+				spec = v.Body()
+			}
+		}
+		if spec != "" {
+			if rendered, err := RenderMarkdown([]byte(spec)); err == nil {
 				voiceSpec = template.HTML(rendered)
 			}
 		}

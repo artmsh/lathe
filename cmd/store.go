@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/devenjarvis/lathe/internal/store"
+	"github.com/devenjarvis/lathe/internal/voice"
 	"github.com/spf13/cobra"
 )
 
@@ -32,6 +33,11 @@ var storeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// Snapshot the selected spec with the tutorial. In particular, this makes
+		// custom voice disclosure portable to a server whose HOME does not carry
+		// the author's custom voice files. Resolution remains best-effort for
+		// compatibility with callers that only record a historical voice name.
+		voiceSpec := voiceSpecForStore(storeVoice)
 		tut, err := store.Store(args[0], store.StoreOptions{
 			Tags:       splitTags(append(storeTags, storeTagsList...)),
 			Sources:    storeSources,
@@ -42,6 +48,7 @@ var storeCmd = &cobra.Command{
 			RepoPath:   storeRepoPath,
 			Tools:      parseTools(storeTools),
 			Voice:      storeVoice,
+			VoiceSpec:  voiceSpec,
 			Model:      storeModel,
 		})
 		if err != nil {
@@ -67,6 +74,20 @@ var storeCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// voiceSpecForStore returns the frontmatter-free body to snapshot alongside a
+// tutorial. Historical or otherwise unavailable names remain name-only instead
+// of making `lathe store` fail after the tutorial itself has already been made.
+func voiceSpecForStore(name string) string {
+	if name == "" {
+		return ""
+	}
+	v, err := voice.Resolve(name)
+	if err != nil {
+		return ""
+	}
+	return v.Body()
 }
 
 // splitTags flattens the repeatable --tag flag, also splitting any

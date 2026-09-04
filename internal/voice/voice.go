@@ -141,6 +141,14 @@ func custom() (map[string]Voice, error) {
 	if err != nil {
 		return nil, err
 	}
+	return customFromDir(dir)
+}
+
+// customFromDir reads custom voice specs from dir without assuming it belongs
+// to the current process's HOME. This lets a server resolve legacy tutorials
+// from a copied or mounted Lathe library whose voices/ directory travels beside
+// tutorials/.
+func customFromDir(dir string) (map[string]Voice, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -165,6 +173,24 @@ func custom() (map[string]Voice, error) {
 		out[name] = Voice{Name: name, Description: desc, Builtin: false, Raw: raw}
 	}
 	return out, nil
+}
+
+// ResolveCustomFromDir resolves name only among custom voice files in dir. It
+// is intended as a portability fallback for an external tutorial library;
+// normal CLI voice selection should use Resolve.
+func ResolveCustomFromDir(name, dir string) (Voice, error) {
+	key := normalizeName(name)
+	if key == "" {
+		return Voice{}, fmt.Errorf("no voice name given")
+	}
+	voices, err := customFromDir(dir)
+	if err != nil {
+		return Voice{}, err
+	}
+	if v, ok := voices[key]; ok {
+		return v, nil
+	}
+	return Voice{}, fmt.Errorf("custom voice %q not found in %s", name, dir)
 }
 
 // List returns every available voice — built-in presets merged with custom
