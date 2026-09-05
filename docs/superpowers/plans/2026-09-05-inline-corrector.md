@@ -161,6 +161,8 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -195,6 +197,17 @@ func TestCorrectHandlerValidation(t *testing.T) {
 	t.Run("non-md part returns 404", func(t *testing.T) {
 		if w := postCorrect(t, srv, "tut", "index.txt", ok); w.Code != http.StatusNotFound {
 			t.Errorf("non-md part = %d, want 404", w.Code)
+		}
+	})
+	t.Run("undeclared md file in the tutorial dir returns 404", func(t *testing.T) {
+		// The file exists, so os.Stat alone would admit it. Only parts the
+		// metadata declares may be rewritten.
+		stray := filepath.Join(dir, "tut", "notes.md")
+		if err := os.WriteFile(stray, []byte("# scratch"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if w := postCorrect(t, srv, "tut", "notes.md", ok); w.Code != http.StatusNotFound {
+			t.Errorf("undeclared part = %d, want 404", w.Code)
 		}
 	})
 	t.Run("empty body returns 400", func(t *testing.T) {
@@ -380,6 +393,14 @@ func (s *Server) handleCorrect(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Stricter than handleAsk, which stops at the os.Stat below. Ask is
+	// read-only; a correction rewrites the file, so the part has to be one the
+	// metadata declares — a stray .md in the tutorial dir is not correctable.
+	// isKnownPart (server.go) also covers the legacy partless index.md.
+	if !isKnownPart(tut, part) {
+		http.NotFound(w, r)
+		return
+	}
 	partPath, ok := s.safeTutorialPath(slug, part)
 	if !ok {
 		http.NotFound(w, r)
@@ -501,6 +522,36 @@ func TestCorrectEnqueuesWhenWorkerConnected(t *testing.T) {
 	if job["note"] != "it is 1024" {
 		t.Errorf("job note = %v, want the reader's note", job["note"])
 	}
+
+	// The worker closes a correction with `lathe work answer`, not `work done`,
+	// because the browser shows its one-line report — including when the skill
+	// deliberately changed nothing. handleWorkAnswer never inspects the job
+	// type, so this needs no server change; the test pins the behaviour.
+	ansBody := []byte(`{"answer":"left unchanged: couldn't find that passage"}`)
+	ansReq := httptest.NewRequest(http.MethodPost, "/-/work/"+resp.JobID+"/answer", bytes.NewReader(ansBody))
+	ansReq.Header.Set("Content-Type", "application/json")
+	ansW := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(ansW, ansReq)
+	if ansW.Code != http.StatusNoContent {
+		t.Fatalf("POST /-/work/{id}/answer = %d, want 204", ansW.Code)
+	}
+
+	getW := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(getW, httptest.NewRequest(http.MethodGet, "/-/work/"+resp.JobID, nil))
+	var got map[string]any
+	if err := json.Unmarshal(getW.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode job: %v", err)
+	}
+	if got["state"] != "done" {
+		t.Errorf("state = %v, want done", got["state"])
+	}
+	if got["answer"] != "left unchanged: couldn't find that passage" {
+		t.Errorf("answer = %v, want the worker's report", got["answer"])
+	}
+	// answerHTML stays gated to ask jobs — a correction report is one plain line.
+	if _, ok := got["answerHTML"]; ok {
+		t.Error("correct job carries answerHTML; want the plain answer only")
+	}
 }
 ```
 
@@ -533,7 +584,7 @@ git commit -m "feat(serve): add the /-/correct endpoint"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `cmd/correct-commit_test.go`. Open `cmd/extend-commit_test.go` first and reuse its `writeTutorial(t, homeDir, slug, status, parts)` helper — it already exists in package `cmd`.
+Create `cmd/correct-commit_test.go`. It reuses `writeTutorial(t, homeDir, slug string, status store.Status, parts []string) string` from `cmd/verify_test.go` (same package) — it creates `$HOME/.lathe/tutorials/<slug>`, writes each named part file, writes metadata, and returns the tutorial dir.
 
 ```go
 package cmd
@@ -553,6 +604,8 @@ func TestCorrectCommitResetsStatus(t *testing.T) {
 		t.Run(string(from), func(t *testing.T) {
 			homeDir := t.TempDir()
 			t.Setenv("HOME", homeDir)
+			// writeTutorial writes part-01.md itself; overwrite it to stand in for
+			// the edit the /lathe-correct skill would have just made.
 			tutDir := writeTutorial(t, homeDir, "test-slug", from, []string{"part-01.md"})
 			if err := os.WriteFile(filepath.Join(tutDir, "part-01.md"), []byte("# corrected"), 0644); err != nil {
 				t.Fatal(err)
@@ -581,10 +634,7 @@ func TestCorrectCommitRefusesWhileInFlight(t *testing.T) {
 		t.Run(string(status), func(t *testing.T) {
 			homeDir := t.TempDir()
 			t.Setenv("HOME", homeDir)
-			tutDir := writeTutorial(t, homeDir, "test-slug", status, []string{"part-01.md"})
-			if err := os.WriteFile(filepath.Join(tutDir, "part-01.md"), []byte("# x"), 0644); err != nil {
-				t.Fatal(err)
-			}
+			writeTutorial(t, homeDir, "test-slug", status, []string{"part-01.md"})
 			if err := correctCommitCmd.RunE(correctCommitCmd, []string{"test-slug", "part-01.md"}); err == nil {
 				t.Fatalf("correct-commit while %s: want an error, got nil", status)
 			}
@@ -612,10 +662,19 @@ func TestCorrectCommitRejectsBadArgs(t *testing.T) {
 			t.Error("traversing slug: want an error, got nil")
 		}
 	})
+	t.Run("undeclared md file in the tutorial dir", func(t *testing.T) {
+		// The file exists, so an os.Stat-only check would accept it. Only parts
+		// the metadata declares count — mirroring isKnownPart in the server.
+		stray := filepath.Join(homeDir, ".lathe", "tutorials", "test-slug", "notes.md")
+		if err := os.WriteFile(stray, []byte("# scratch"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := correctCommitCmd.RunE(correctCommitCmd, []string{"test-slug", "notes.md"}); err == nil {
+			t.Error("undeclared part: want an error, got nil")
+		}
+	})
 }
 ```
-
-Check `writeTutorial`'s signature in `cmd/extend-commit_test.go` before writing — if it writes the part files itself, drop the redundant `os.WriteFile` calls above.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -665,13 +724,15 @@ var correctCommitCmd = &cobra.Command{
 		}
 		tutDir := filepath.Join(tutorialsDir, slug)
 
-		if _, err := os.Stat(filepath.Join(tutDir, partFile)); err != nil {
-			return fmt.Errorf("part file %q not found: %w", partFile, err)
-		}
-
 		tut, err := store.ReadMetadata(tutDir)
 		if err != nil {
 			return fmt.Errorf("read metadata for %q: %w", slug, err)
+		}
+		if !declaredPart(tut, partFile) {
+			return fmt.Errorf("%q is not a part of %q", partFile, slug)
+		}
+		if _, err := os.Stat(filepath.Join(tutDir, partFile)); err != nil {
+			return fmt.Errorf("part file %q not found: %w", partFile, err)
 		}
 
 		// The paste-the-handoff path never touches the HTTP endpoint, so the
@@ -689,6 +750,23 @@ var correctCommitCmd = &cobra.Command{
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Recorded a correction to %s in %q (now unverified)\n", partFile, slug)
 		return nil
 	},
+}
+
+// declaredPart reports whether partFile is one of the tutorial's declared parts,
+// or the legacy single-file index.md of a tutorial that was never split. It
+// restates isKnownPart from internal/serve, which cmd cannot import; a
+// correction rewrites a file, so "it exists on disk" is not a strong enough
+// check.
+func declaredPart(tut *store.Tutorial, partFile string) bool {
+	if partFile == "index.md" {
+		return len(tut.Parts) == 0
+	}
+	for _, p := range tut.Parts {
+		if p == partFile {
+			return true
+		}
+	}
+	return false
 }
 
 func init() {
@@ -762,7 +840,9 @@ func TestWorkSkillDispatchesCorrect(t *testing.T) {
 		if s.Slug != "lathe-work" {
 			continue
 		}
-		for _, want := range []string{"/lathe-correct", "unrecognised", "lathe work done"} {
+		// The correct branch reports through `work answer` (the browser shows the
+		// one-liner); the unknown-type catch-all closes with `work done`.
+		for _, want := range []string{"/lathe-correct", "unrecognised", "lathe work answer", "lathe work done"} {
 			if !bytes.Contains(s.Raw, []byte(want)) {
 				t.Errorf("lathe-work SKILL.md missing %q", want)
 			}
@@ -831,7 +911,7 @@ Everything about voice, shape, and research discipline comes from the **`lathe`*
 
 6. **Onboarding guides only:** after committing, run `lathe drift <slug>` and report the result, so a prose edit that broke an anchor surfaces immediately.
 
-7. **Report** in one or two lines: what you changed, or why you didn't.
+7. **Report** in one line: what you changed, or why you didn't. When `/lathe-work` dispatched you, that line is what the reader sees in their browser — "left unchanged: …" is a normal, expected outcome, and saying so beats silence.
 
 ## Boundaries
 
@@ -846,10 +926,11 @@ Everything about voice, shape, and research discipline comes from the **`lathe`*
 In `.claude/skills/lathe-work/SKILL.md`, inside "The loop" step 2, after the `ask` bullet, add:
 
 ```markdown
-   - **`correct`** → apply the **`/lathe-correct`** protocol against `slug` / `part`, passing `excerpt` (the text the reader selected) and `note` (what they say is wrong). It locates the excerpt, applies the narrowest edit to that one part, and records it with `lathe correct-commit`. When it finishes, close the job:
+   - **`correct`** → apply the **`/lathe-correct`** protocol against `slug` / `part`, passing `excerpt` (the text the reader selected) and `note` (what they say is wrong). It locates the excerpt, applies the narrowest edit to that one part, and records it with `lathe correct-commit`. Close the job by sending its one-line report back — **not** with `work done`, which carries no message and would leave the browser claiming the part changed even when the skill deliberately changed nothing:
      ```bash
-     lathe work done <id>
+     printf '%s' "<the one-line report>" | lathe work answer <id> --answer -
      ```
+     Examples: `rewrote the sample-rate paragraph: 512 → 1024` / `left unchanged: that passage isn't in part-02.md` / `left unchanged: the tutorial is right, mtimes are nanosecond-precision on APFS`.
 
    - **anything else** → an unrecognised `type` means this skill copy is older than the server. Don't guess at it: say so in chat and close it so the browser isn't left polling a job nobody will finish.
      ```bash
@@ -857,7 +938,7 @@ In `.claude/skills/lathe-work/SKILL.md`, inside "The loop" step 2, after the `as
      ```
 ```
 
-Also update the JSON example in step 1 to mention the correction fields, and add to **Boundaries**: `` `correct` → `lathe work done <id>` (the part edit is already durable via `lathe correct-commit`). ``
+Also update the JSON example in step 1 to mention the correction fields, and add to **Boundaries**: `` `correct` → `lathe work answer <id> --answer -` with a one-line report (the part edit is already durable via `lathe correct-commit`; the report is what the reader sees, including when nothing was changed). ``
 
 - [ ] **Step 5: Regenerate the embedded mirror and run the tests**
 
@@ -984,8 +1065,16 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
 
     var excerpt = '';
     var MAX_EXCERPT = 4096;
+    // pending: a job is in flight. resolved: a result (report, handoff block or
+    // error) is on screen. Either state makes the popup sticky — a scroll or a
+    // stray click must not throw away a running job's answer, and mobile
+    // text selection routinely fires a scroll.
+    var pending = false, resolved = false, pollTimer = null;
 
     function hide(){
+      if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+      pending = false;
+      resolved = false;
       popup.hidden = true;
       statusEl.hidden = true;
       statusEl.textContent = '';
@@ -993,6 +1082,13 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
       input.disabled = false;
       apply.disabled = false;
       excerpt = '';
+    }
+
+    // Dismissals that aren't the reader's explicit Escape only apply while the
+    // popup holds nothing worth losing.
+    function hideIfIdle(){
+      if (pending || resolved) return;
+      hide();
     }
 
     // Anchor the popup under the selection, clamped to the viewport and flipped
@@ -1015,11 +1111,12 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
 
     function onSelect(){
       if (!popup.hidden && popup.contains(document.activeElement)) return;
+      if (pending || resolved) return;
       var sel = document.getSelection();
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0){ hide(); return; }
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0){ hideIfIdle(); return; }
       var text = sel.toString().trim();
-      if (!text){ hide(); return; }
-      if (!inArticle(sel.anchorNode) || !inArticle(sel.focusNode)){ hide(); return; }
+      if (!text){ hideIfIdle(); return; }
+      if (!inArticle(sel.anchorNode) || !inArticle(sel.focusNode)){ hideIfIdle(); return; }
       excerpt = text.length > MAX_EXCERPT ? text.slice(0, MAX_EXCERPT) : text;
       placeAt(sel.getRangeAt(0).getBoundingClientRect());
     }
@@ -1032,11 +1129,19 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
       if (ev.key === 'Escape' && !popup.hidden) hide();
     });
     document.addEventListener('mousedown', function(ev){
-      if (!popup.hidden && !popup.contains(ev.target)) hide();
+      if (!popup.hidden && !popup.contains(ev.target)) hideIfIdle();
     });
-    window.addEventListener('scroll', function(){ if (!popup.hidden) hide(); }, {passive: true});
+    window.addEventListener('scroll', function(){ if (!popup.hidden) hideIfIdle(); }, {passive: true});
 
     function showStatus(text){
+      statusEl.hidden = false;
+      statusEl.textContent = text;
+    }
+
+    // Reader-supplied and model-supplied strings both go in as textContent,
+    // never innerHTML — the same rule the ask drawer follows.
+    function showResult(text){
+      resolved = true;
       statusEl.hidden = false;
       statusEl.textContent = text;
     }
@@ -1044,6 +1149,7 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
     // No worker: render the paste-able block with a Copy button, reusing the
     // page's clipboard helper so it works outside a secure context too.
     function showHandoff(command){
+      resolved = true;
       statusEl.hidden = false;
       statusEl.textContent = '';
       var note = document.createElement('p');
@@ -1066,12 +1172,16 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
       statusEl.appendChild(copy);
     }
 
-    // The part changed on disk once the job is done, so the honest affordance is
-    // a reload — the status poller only swaps the badge/verify/extend regions,
-    // never the article body.
-    function offerReload(){
+    // The worker's one-line report is the whole point: it may say the part was
+    // rewritten, or that nothing was changed because the excerpt couldn't be
+    // located or the note was wrong. Show it verbatim, then offer a reload —
+    // the status poller only swaps the badge/verify/extend regions, never the
+    // article body, so a changed part stays stale on screen until the reader
+    // reloads. A reader told "left unchanged" simply won't click.
+    function offerReload(report){
+      resolved = true;
       statusEl.hidden = false;
-      statusEl.textContent = 'Part updated. ';
+      statusEl.textContent = (report || 'Part updated.') + ' ';
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'btn btn-sm';
@@ -1081,22 +1191,29 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
     }
 
     function pollJob(jobId){
+      pending = true;
       showStatus('Applying…');
       var attempts = 0, maxAttempts = 400; // ~10 min at 1.5s
-      var timer = setInterval(function(){
+      pollTimer = setInterval(function(){
         if (document.hidden) return;
         attempts++;
         if (attempts > maxAttempts){
-          clearInterval(timer);
-          showStatus('No result yet — make sure /lathe-work is running in your agent.');
+          clearInterval(pollTimer);
+          pollTimer = null;
+          pending = false;
+          showResult('No result yet — make sure /lathe-work is running in your agent.');
           return;
         }
         fetch('/-/work/' + encodeURIComponent(jobId), {headers: {'Accept': 'application/json'}})
           .then(function(r){ return r.ok ? r.json() : null; })
           .then(function(data){
             if (!data || data.state !== 'done') return;
-            clearInterval(timer);
-            offerReload();
+            clearInterval(pollTimer);
+            pollTimer = null;
+            pending = false;
+            // An older worker that closed with `lathe work done` sends no
+            // answer; fall back to the neutral wording.
+            offerReload(data.answer || '');
           })
           .catch(function(){ /* transient blip — keep polling */ });
       }, 1500);
@@ -1108,6 +1225,7 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
       if (!note || !excerpt) return;
       input.disabled = true;
       apply.disabled = true;
+      pending = true;
       showStatus('Sending…');
 
       fetch('/-/correct/' + encodeURIComponent(slug) + '/' + encodeURIComponent(part), {
@@ -1121,7 +1239,8 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
           else showHandoff(data.command || '');
         });
       }).catch(function(err){
-        showStatus('Error: ' + (err && err.message ? err.message : 'request failed'));
+        pending = false;
+        showResult('Error: ' + (err && err.message ? err.message : 'request failed'));
         input.disabled = false;
         apply.disabled = false;
       });
