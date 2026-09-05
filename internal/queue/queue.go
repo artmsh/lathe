@@ -1,6 +1,6 @@
 // Package queue is the in-memory job queue that bridges the lathe web UI and an
-// interactive coding-agent session. The browser enqueues a job (ask, verify, or
-// extend) and an agent running the /lathe-work loop long-polls Claim, does the
+// interactive coding-agent session. The browser enqueues a job (ask, verify, extend or
+// correct) and an agent running the /lathe-work loop long-polls Claim, does the
 // model work in its interactive session, and reports back. The queue is the only
 // piece of shared state between the two processes; jobs are ephemeral (server
 // lifetime) because verify/extend persist their real state to disk via the CLI
@@ -22,9 +22,10 @@ import (
 type JobType string
 
 const (
-	JobAsk    JobType = "ask"
-	JobVerify JobType = "verify"
-	JobExtend JobType = "extend"
+	JobAsk     JobType = "ask"
+	JobVerify  JobType = "verify"
+	JobExtend  JobType = "extend"
+	JobCorrect JobType = "correct"
 )
 
 // State tracks a job through its short life: queued (waiting for a worker),
@@ -43,12 +44,18 @@ const (
 // fields populated depend on Type: verify needs only Slug; extend adds optional
 // Guidance; ask adds Part, Question, and (on completion) Answer.
 type Job struct {
-	ID        string    `json:"id"`
-	Type      JobType   `json:"type"`
-	Slug      string    `json:"slug"`
-	Part      string    `json:"part,omitempty"`
-	Question  string    `json:"question,omitempty"`
-	Guidance  string    `json:"guidance,omitempty"`
+	ID       string  `json:"id"`
+	Type     JobType `json:"type"`
+	Slug     string  `json:"slug"`
+	Part     string  `json:"part,omitempty"`
+	Question string  `json:"question,omitempty"`
+	Guidance string  `json:"guidance,omitempty"`
+	// Excerpt and Note belong to a correct job: the text the reader selected in
+	// the browser and what they say is wrong with it. They stay separate from
+	// Question/Guidance because a correction carries two payloads where ask and
+	// extend carry one, and the worker dispatches on that shape.
+	Excerpt   string    `json:"excerpt,omitempty"`
+	Note      string    `json:"note,omitempty"`
 	State     State     `json:"state"`
 	Answer    string    `json:"answer,omitempty"`
 	CreatedAt time.Time `json:"created_at"`

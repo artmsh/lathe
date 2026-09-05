@@ -2,6 +2,8 @@ package queue
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -222,5 +224,61 @@ func TestConcurrentEnqueueClaim(t *testing.T) {
 	}
 	if len(seen) != n {
 		t.Errorf("claimed %d jobs, want %d", len(seen), n)
+	}
+}
+
+// A correct job carries two payloads, not one: the excerpt the reader selected
+// and the note saying what's wrong. Both must survive enqueue → claim intact,
+// because the worker needs them to locate and apply the edit.
+func TestCorrectJobRoundTrip(t *testing.T) {
+	q := New()
+	id := q.Enqueue(Job{
+		Type:    JobCorrect,
+		Slug:    "digital-synth-zig",
+		Part:    "part-02.md",
+		Excerpt: "the ring buffer is 512 samples",
+		Note:    "it's 1024, see the code above",
+	})
+
+	job, ok := q.Claim(context.Background())
+	if !ok {
+		t.Fatal("Claim returned no job")
+	}
+	if job.ID != id {
+		t.Errorf("ID = %q, want %q", job.ID, id)
+	}
+	if job.Type != JobCorrect {
+		t.Errorf("Type = %q, want %q", job.Type, JobCorrect)
+	}
+	if job.Excerpt != "the ring buffer is 512 samples" {
+		t.Errorf("Excerpt = %q, want the selected text", job.Excerpt)
+	}
+	if job.Note != "it's 1024, see the code above" {
+		t.Errorf("Note = %q, want the reader's note", job.Note)
+	}
+	if job.State != StateClaimed {
+		t.Errorf("State = %q, want %q", job.State, StateClaimed)
+	}
+}
+
+// The worker parses `lathe work next` output as JSON, so the wire names are part
+// of the contract with every installed copy of the /lathe-work skill.
+func TestCorrectJobJSONFieldNames(t *testing.T) {
+	raw, err := json.Marshal(Job{Type: JobCorrect, Excerpt: "x", Note: "y"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"type":"correct"`, `"excerpt":"x"`, `"note":"y"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("marshalled job = %s, want it to contain %s", raw, want)
+		}
+	}
+	// omitempty: an ask/verify/extend job must not grow empty correction fields.
+	raw, err = json.Marshal(Job{Type: JobAsk})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "excerpt") || strings.Contains(string(raw), "note") {
+		t.Errorf("ask job = %s, want no excerpt/note keys", raw)
 	}
 }
