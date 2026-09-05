@@ -463,7 +463,9 @@ Append to `internal/serve/work_test.go` (package `serve_test`, which has the `ma
 ```go
 func TestCorrectEnqueuesWhenWorkerConnected(t *testing.T) {
 	dir := t.TempDir()
-	writeTutorialFixture(t, dir, "tut", store.StatusVerified, []string{"part-01.md"})
+	// makeExtendTutorial lives in extend_test.go (same package) and writes each
+	// part file to disk, which handleCorrect os.Stats.
+	makeExtendTutorial(t, dir, "tut", store.StatusVerified, []string{"part-01.md"})
 	srv := serve.NewServer(dir)
 	markWorkerConnected(t, srv)
 
@@ -502,7 +504,7 @@ func TestCorrectEnqueuesWhenWorkerConnected(t *testing.T) {
 }
 ```
 
-Before writing it, open `internal/serve/work_test.go` and find how the existing `TestVerifyEnqueuesWhenWorkerConnected` builds its tutorial fixture; reuse that exact helper name and signature instead of the placeholder `writeTutorialFixture` above if it differs, and make sure the fixture creates `part-01.md` on disk (the handler `os.Stat`s it).
+`makeExtendTutorial(t, dir, slug string, status store.Status, parts []string) string` is defined in `internal/serve/extend_test.go` (package `serve_test`, same package as `work_test.go`) and is what `TestVerifyEnqueuesWhenWorkerConnected` already uses. `bytes`, `encoding/json`, `net/http`, `net/http/httptest` and `store` are already imported in `work_test.go`.
 
 - [ ] **Step 6: Run it to verify it fails, then passes**
 
@@ -893,13 +895,21 @@ Append to `internal/serve/server_test.go` (find how the existing reading-page te
 // The inline corrector ships with the reading page, so a reader can select and
 // correct without any extra request.
 func TestPartPageCarriesCorrectorMarkup(t *testing.T) {
-	// … build the same fixture + request the same part URL the neighbouring
-	// reading-page tests use, then:
+	dir := t.TempDir()
+	makeTestTutorial(t, dir, "test-series", true)
+	srv := serve.NewServer(dir)
+
+	req := httptest.NewRequest(http.MethodGet, "/test-series/part-01.md", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET part page = %d, want 200", w.Code)
+	}
 	body := w.Body.String()
 	for _, want := range []string{
 		`id="correctPopup"`,
 		`id="correctInput"`,
-		`/-/correct/`,
+		"/-/correct/",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("part page missing %q", want)
@@ -907,6 +917,8 @@ func TestPartPageCarriesCorrectorMarkup(t *testing.T) {
 	}
 }
 ```
+
+`makeTestTutorial(t, dir, slug string, series bool) string` is the existing helper at the top of `server_test.go` (package `serve_test`); `series: true` gives it `part-01.md` and `part-02.md`. The `/test-series/part-01.md` request shape matches the neighbouring reading-page tests.
 
 - [ ] **Step 2: Run it to verify it fails**
 
