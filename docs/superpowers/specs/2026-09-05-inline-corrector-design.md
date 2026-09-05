@@ -75,8 +75,15 @@ Validation chain, copied from `ask.go` in order:
 2. part must end in `.md` → 404
 3. `safeTutorialPath(slug)` → 404
 4. `store.ReadMetadata` → 404
-5. `safeTutorialPath(slug, part)` + `os.Stat` → 404
-6. `readJSONBody(w, r, maxCorrectionBytes, &payload)`
+5. `isKnownPart(tut, part)` → 404
+6. `safeTutorialPath(slug, part)` + `os.Stat` → 404
+7. `readJSONBody(w, r, maxCorrectionBytes, &payload)`
+
+Step 5 is stricter than `ask.go`, which stops at `os.Stat`. Ask is
+read-only; a correction rewrites the file, so the part must be one the
+metadata declares (`isKnownPart` in `server.go`, which also covers the
+legacy `index.md` case) — a stray `.md` sitting in the tutorial dir is not
+a correctable part.
 
 Then, from `extend.go`, the in-flight guard:
 
@@ -160,8 +167,11 @@ lathe correct-commit <slug> <part-file>
 ```
 
 - `validateSlug` on both args (the existing helper in `verify-result.go`).
+- Read metadata; the part must be declared in `Parts` (or be the legacy
+  `index.md` of a partless tutorial) — the same rule `isKnownPart` applies
+  in the server, restated here because `cmd` cannot import `internal/serve`.
 - `os.Stat` the part file under the tutorial dir; missing → error.
-- Read metadata; refuse when `Status` is `verifying` or `extending`
+- Refuse when `Status` is `verifying` or `extending`
   (the same guard the endpoint applies, re-applied at the write, because a
   handoff paste bypasses the endpoint entirely).
 - Set `Status = store.StatusUnverified` and write metadata. An edited part
@@ -176,7 +186,21 @@ list-page filters for no gain. One command, not a start/commit pair.
 
 `.claude/skills/lathe-work/SKILL.md` gains a `correct` branch: apply the
 `/lathe-correct` protocol against `slug` / `part` / `excerpt` / `note`,
-then `lathe work done <id>`.
+then report the outcome with `lathe work answer <id> --answer -` — **not**
+`lathe work done`.
+
+`work done` carries no message, so a browser watching a `done` job can only
+say "Part updated". But the skill declines to edit in several ordinary
+cases: the excerpt can't be located, it matches ambiguously, the note is
+factually wrong, or the target is an anchored fence in an onboarding guide.
+In every one of those the reader would be told the part changed when it
+did not. `handleWorkAnswer` already calls `SetAnswer` then `Done` and never
+inspects the job type, so the same endpoint serves a correction report with
+no server change. The report is one line — "rewrote the paragraph on X" or
+"left unchanged: couldn't find that passage in the source".
+
+`handleWorkGet` needs no change either: the plain `answer` field is enough,
+and `answerHTML` stays gated to `JobAsk`.
 
 It also gains a **catch-all**: an unrecognised `type` → say so in chat and
 `lathe work done <id>`. Stale skill installs are likely during rollout, and
@@ -202,15 +226,21 @@ In `layout.html`, a new self-contained script block:
 - **Submit.** `POST /-/correct/{slug}/{part}` with `{excerpt, note}`.
   - `mode === "queued"` → collapse the popup to a small "Applying…" pill
     and poll `GET /-/work/{id}` every 1.5s, capped like `pollAskAnswer`,
-    pausing while `document.hidden`.
+    pausing while `document.hidden`. A `pending` flag is set on submit and
+    cleared when the poll resolves; while it is set, outside-click and
+    scroll do **not** dismiss the popup. Otherwise a scroll — which mobile
+    selection routinely triggers — silently discards the result of a job
+    that is still running.
   - `mode === "handoff"` → render the paste-able block with a Copy button,
     reusing the same `copyText` helper the code-copy pass exposes.
-- **Staleness.** When the poll reports `done`, the part on disk has changed
-  under the reader — unlike ask, which is read-only. The pill becomes
-  "Part updated — Reload", a click reloads the page. The existing status
-  poller will separately swap the badge to `unverified`; it does not and
-  should not swap article body HTML, so the explicit reload is the honest
-  affordance.
+- **Staleness.** When the poll reports `done`, the pill shows the worker's
+  `answer` via `textContent` — the one-line report from §6 — followed by a
+  **Reload** button. Unlike ask, a correction rewrites the part under the
+  reader, and the existing status poller never swaps article body HTML, so
+  the reload is the honest affordance. A reader who is told "left
+  unchanged: couldn't find that passage" simply doesn't click it. If
+  `answer` is empty (an old worker that called `work done`), the pill falls
+  back to "Part updated".
 
 Every reader-typed string goes in via `textContent`, never `innerHTML` —
 matching how the ask drawer treats question text.
@@ -224,6 +254,9 @@ matching how the ask drawer treats question text.
   handoff string shape including the sentinels).
 - `internal/queue/queue_test.go`: a `JobCorrect` round-trip carrying
   `Excerpt`/`Note` through enqueue → claim → done.
+- `internal/serve/work_test.go`: `POST /-/work/{id}/answer` on a `correct`
+  job records the report and closes it, and `GET /-/work/{id}` hands the
+  `answer` back without an `answerHTML` key.
 - `cmd/correct-commit_test.go`: status reset from `verified` and from
   `failed`; refusal while `verifying`/`extending`; missing part file;
   invalid slug.
