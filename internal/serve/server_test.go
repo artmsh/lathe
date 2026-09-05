@@ -2253,3 +2253,28 @@ func TestNoKindRendersAsBeforeOnList(t *testing.T) {
 		t.Error("a pre-feature tutorial should never render as stale")
 	}
 }
+
+// The inline corrector ships with the reading page, so a reader can select and
+// correct without any extra request.
+func TestPartPageCarriesCorrectorMarkup(t *testing.T) {
+	dir := t.TempDir()
+	makeTestTutorial(t, dir, "test-series", true)
+	srv := serve.NewServer(dir)
+
+	req := httptest.NewRequest(http.MethodGet, "/test-series/part-01.md", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET part page = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="correctPopup"`,
+		`id="correctInput"`,
+		"/-/correct/",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("part page missing %q", want)
+		}
+	}
+}

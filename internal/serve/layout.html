@@ -137,6 +137,13 @@
   </form>
 </aside>
 <div id="askBackdrop" hidden></div>
+<div id="correctPopup" hidden role="dialog" aria-label="Suggest a correction">
+  <form id="correctForm">
+    <input type="text" id="correctInput" placeholder="What's wrong here?" autocomplete="off" maxlength="500">
+    <button type="submit" id="correctApply" class="btn btn-primary btn-sm">Apply</button>
+  </form>
+  <div id="correctStatus" hidden></div>
+</div>
 <script>
   // Theme toggle: attach to every element marked [data-theme-toggle] so the
   // sidebar button and the narrow bottom-dock button stay in sync.
@@ -639,6 +646,10 @@
       }
       return legacyCopy(text);
     }
+
+    // The inline corrector's handoff block reuses this rather than duplicating
+    // the secure-context / execCommand fallback dance.
+    window.latheCopyText = copyText;
 
     function legacyCopy(text){
       return new Promise(function(resolve, reject){
@@ -1243,6 +1254,211 @@
     // transition into verifying/extending. The load-time status seeds ?from=; live
     // data corrects it. JS-off readers fall back to the <noscript> meta-refresh.
     window.latheStartStatusPoll(el.getAttribute('data-status'));
+  })();
+</script>
+<script>
+  // Inline corrector. Selecting text inside the article arms a popup with a
+  // one-line field; Apply posts the excerpt plus the note to /-/correct, which
+  // either enqueues a job for a connected /lathe-work agent or hands back the
+  // paste-able command. Unlike Ask, a correction rewrites the part on disk — so
+  // when the job finishes we offer a reload rather than pretending the page is
+  // still current.
+  (function(){
+    var popup = document.getElementById('correctPopup');
+    var form = document.getElementById('correctForm');
+    var input = document.getElementById('correctInput');
+    var apply = document.getElementById('correctApply');
+    var statusEl = document.getElementById('correctStatus');
+    var drawer = document.getElementById('askDrawer');
+    var article = document.querySelector('article') || document.querySelector('main');
+    if (!popup || !form || !article || !drawer) return;
+
+    var slug = drawer.getAttribute('data-slug') || '';
+    var part = drawer.getAttribute('data-part') || '';
+    if (!slug || !part) return;
+
+    var excerpt = '';
+    var MAX_EXCERPT = 4096;
+    // pending: a job is in flight. resolved: a result (report, handoff block or
+    // error) is on screen. Either state makes the popup sticky — a scroll or a
+    // stray click must not throw away a running job's answer, and mobile
+    // text selection routinely fires a scroll.
+    var pending = false, resolved = false, pollTimer = null;
+
+    function hide(){
+      if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+      pending = false;
+      resolved = false;
+      popup.hidden = true;
+      statusEl.hidden = true;
+      statusEl.textContent = '';
+      input.value = '';
+      input.disabled = false;
+      apply.disabled = false;
+      excerpt = '';
+    }
+
+    // Dismissals that aren't the reader's explicit Escape only apply while the
+    // popup holds nothing worth losing.
+    function hideIfIdle(){
+      if (pending || resolved) return;
+      hide();
+    }
+
+    // Anchor the popup under the selection, clamped to the viewport and flipped
+    // above when there's no room below.
+    function placeAt(rect){
+      popup.hidden = false;
+      var w = popup.offsetWidth, h = popup.offsetHeight;
+      var left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8));
+      var top = rect.bottom + 8;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, rect.top - h - 8);
+      popup.style.left = left + 'px';
+      popup.style.top = top + 'px';
+    }
+
+    // Arm only for selections that live entirely inside the article: the Ask
+    // drawer, the TOC rail, the nav and the handoff <pre>s must never trigger it.
+    function inArticle(node){
+      return node && article.contains(node.nodeType === 1 ? node : node.parentNode);
+    }
+
+    function onSelect(){
+      if (!popup.hidden && popup.contains(document.activeElement)) return;
+      if (pending || resolved) return;
+      var sel = document.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0){ hideIfIdle(); return; }
+      var text = sel.toString().trim();
+      if (!text){ hideIfIdle(); return; }
+      if (!inArticle(sel.anchorNode) || !inArticle(sel.focusNode)){ hideIfIdle(); return; }
+      excerpt = text.length > MAX_EXCERPT ? text.slice(0, MAX_EXCERPT) : text;
+      placeAt(sel.getRangeAt(0).getBoundingClientRect());
+    }
+
+    document.addEventListener('mouseup', function(){ setTimeout(onSelect, 0); });
+    document.addEventListener('keyup', function(ev){
+      if (ev.key === 'Shift' || ev.key.indexOf('Arrow') === 0) setTimeout(onSelect, 0);
+    });
+    document.addEventListener('keydown', function(ev){
+      if (ev.key === 'Escape' && !popup.hidden) hide();
+    });
+    document.addEventListener('mousedown', function(ev){
+      if (!popup.hidden && !popup.contains(ev.target)) hideIfIdle();
+    });
+    window.addEventListener('scroll', function(){ if (!popup.hidden) hideIfIdle(); }, {passive: true});
+
+    function showStatus(text){
+      statusEl.hidden = false;
+      statusEl.textContent = text;
+    }
+
+    // Reader-supplied and model-supplied strings both go in as textContent,
+    // never innerHTML — the same rule the ask drawer follows.
+    function showResult(text){
+      resolved = true;
+      statusEl.hidden = false;
+      statusEl.textContent = text;
+    }
+
+    // No worker: render the paste-able block with a Copy button, reusing the
+    // page's clipboard helper so it works outside a secure context too.
+    function showHandoff(command){
+      resolved = true;
+      statusEl.hidden = false;
+      statusEl.textContent = '';
+      var note = document.createElement('p');
+      note.className = 'handoff-note';
+      note.textContent = 'Paste this into your coding agent to apply it there:';
+      statusEl.appendChild(note);
+      var pre = document.createElement('pre');
+      pre.className = 'handoff-cmd';
+      pre.textContent = command;
+      statusEl.appendChild(pre);
+      var copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'btn btn-sm';
+      copy.textContent = 'Copy';
+      copy.addEventListener('click', function(){
+        var done = function(){ copy.textContent = 'Copied'; setTimeout(function(){ copy.textContent = 'Copy'; }, 1500); };
+        if (window.latheCopyText) window.latheCopyText(command).then(done).catch(function(){ copy.textContent = 'Failed'; });
+        else if (navigator.clipboard) navigator.clipboard.writeText(command).then(done);
+      });
+      statusEl.appendChild(copy);
+    }
+
+    // The worker's one-line report is the whole point: it may say the part was
+    // rewritten, or that nothing was changed because the excerpt couldn't be
+    // located or the note was wrong. Show it verbatim, then offer a reload —
+    // the status poller only swaps the badge/verify/extend regions, never the
+    // article body, so a changed part stays stale on screen until the reader
+    // reloads. A reader told "left unchanged" simply won't click.
+    function offerReload(report){
+      resolved = true;
+      statusEl.hidden = false;
+      statusEl.textContent = (report || 'Part updated.') + ' ';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-sm';
+      btn.textContent = 'Reload';
+      btn.addEventListener('click', function(){ window.location.reload(); });
+      statusEl.appendChild(btn);
+    }
+
+    function pollJob(jobId){
+      pending = true;
+      showStatus('Applying…');
+      var attempts = 0, maxAttempts = 400; // ~10 min at 1.5s
+      pollTimer = setInterval(function(){
+        if (document.hidden) return;
+        attempts++;
+        if (attempts > maxAttempts){
+          clearInterval(pollTimer);
+          pollTimer = null;
+          pending = false;
+          showResult('No result yet — make sure /lathe-work is running in your agent.');
+          return;
+        }
+        fetch('/-/work/' + encodeURIComponent(jobId), {headers: {'Accept': 'application/json'}})
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(data){
+            if (!data || data.state !== 'done') return;
+            clearInterval(pollTimer);
+            pollTimer = null;
+            pending = false;
+            // An older worker that closed with `lathe work done` sends no
+            // answer; fall back to the neutral wording.
+            offerReload(data.answer || '');
+          })
+          .catch(function(){ /* transient blip — keep polling */ });
+      }, 1500);
+    }
+
+    form.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      var note = (input.value || '').trim();
+      if (!note || !excerpt) return;
+      input.disabled = true;
+      apply.disabled = true;
+      pending = true;
+      showStatus('Sending…');
+
+      fetch('/-/correct/' + encodeURIComponent(slug) + '/' + encodeURIComponent(part), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({excerpt: excerpt, note: note})
+      }).then(function(response){
+        if (!response.ok) return response.text().then(function(t){ throw new Error(t || ('HTTP ' + response.status)); });
+        return response.json().then(function(data){
+          if (data.mode === 'queued') pollJob(data.jobId);
+          else showHandoff(data.command || '');
+        });
+      }).catch(function(err){
+        pending = false;
+        showResult('Error: ' + (err && err.message ? err.message : 'request failed'));
+        input.disabled = false;
+        apply.disabled = false;
+      });
+    });
   })();
 </script>
 {{template "liveNudge" .}}
