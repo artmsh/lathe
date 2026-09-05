@@ -104,6 +104,9 @@ const maxCorrectionBytes = 8 << 10 // 8 KiB, matching maxQuestionBytes
 
 Excerpt is capped at 4 KiB and note at 2 KiB after trimming; the client
 truncates before sending, the server rejects an over-cap field with 400.
+The client truncates on the UTF-8 encoded length, not on JS string length —
+rendered prose carries typographic quotes and dashes that cost three bytes
+each, so a character budget would let an over-cap excerpt through.
 An empty note is a 400 (`"note is required"`); an empty excerpt is a 400
 (`"excerpt is required"`) — a correction with no anchor has nothing to
 locate.
@@ -226,11 +229,15 @@ In `layout.html`, a new self-contained script block:
 - **Submit.** `POST /-/correct/{slug}/{part}` with `{excerpt, note}`.
   - `mode === "queued"` → collapse the popup to a small "Applying…" pill
     and poll `GET /-/work/{id}` every 1.5s, capped like `pollAskAnswer`,
-    pausing while `document.hidden`. A `pending` flag is set on submit and
-    cleared when the poll resolves; while it is set, outside-click and
-    scroll do **not** dismiss the popup. Otherwise a scroll — which mobile
-    selection routinely triggers — silently discards the result of a job
-    that is still running.
+    pausing while `document.hidden`. Dismissal splits on accidental vs.
+    deliberate: a scroll — which mobile selection routinely triggers — and
+    a selection collapsing on its own never discard a running job or an
+    unread report, while a click outside and Escape dismiss either. A
+    `pending` flag, set on submit and cleared when the poll resolves,
+    blocks even the deliberate dismissals; a fresh selection supersedes a
+    result already on screen. Without the deliberate path a handoff block,
+    which never resolves on its own, would trap the popup over the article
+    on a device with no Escape key.
   - `mode === "handoff"` → render the paste-able block with a Copy button,
     reusing the same `copyText` helper the code-copy pass exposes.
 - **Staleness.** When the poll reports `done`, the pill shows the worker's

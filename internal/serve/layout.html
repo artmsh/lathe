@@ -1278,7 +1278,19 @@
     if (!slug || !part) return;
 
     var excerpt = '';
-    var MAX_EXCERPT = 4096;
+    // The server caps the excerpt at 4096 *bytes*; JS string length is
+    // characters, and rendered prose carries typographic quotes and dashes that
+    // cost 3 bytes each. Truncate on the encoded length so a large selection is
+    // trimmed here rather than bounced back as a 400.
+    var MAX_EXCERPT_BYTES = 4096;
+    function capBytes(text, max){
+      if (typeof TextEncoder === 'undefined') return text.slice(0, Math.floor(max / 3));
+      var enc = new TextEncoder();
+      if (enc.encode(text).length <= max) return text;
+      var out = text;
+      while (out.length && enc.encode(out).length > max) out = out.slice(0, Math.floor(out.length * 0.9) || 0);
+      return out;
+    }
     // pending: a job is in flight. resolved: a result (report, handoff block or
     // error) is on screen. Either state makes the popup sticky — a scroll or a
     // stray click must not throw away a running job's answer, and mobile
@@ -1298,8 +1310,10 @@
       excerpt = '';
     }
 
-    // Dismissals that aren't the reader's explicit Escape only apply while the
-    // popup holds nothing worth losing.
+    // A scroll, or the selection collapsing on its own, is accidental — mobile
+    // text selection routinely fires a scroll — so it never discards a running
+    // job or a report the reader hasn't read yet. A click outside and Escape
+    // are deliberate and hide a resolved popup; see the listeners below.
     function hideIfIdle(){
       if (pending || resolved) return;
       hide();
@@ -1325,13 +1339,15 @@
 
     function onSelect(){
       if (!popup.hidden && popup.contains(document.activeElement)) return;
-      if (pending || resolved) return;
+      if (pending) return;
       var sel = document.getSelection();
       if (!sel || sel.isCollapsed || sel.rangeCount === 0){ hideIfIdle(); return; }
       var text = sel.toString().trim();
       if (!text){ hideIfIdle(); return; }
       if (!inArticle(sel.anchorNode) || !inArticle(sel.focusNode)){ hideIfIdle(); return; }
-      excerpt = text.length > MAX_EXCERPT ? text.slice(0, MAX_EXCERPT) : text;
+      // A fresh selection supersedes whatever the last correction reported.
+      if (resolved) hide();
+      excerpt = capBytes(text, MAX_EXCERPT_BYTES);
       placeAt(sel.getRangeAt(0).getBoundingClientRect());
     }
 
@@ -1342,8 +1358,11 @@
     document.addEventListener('keydown', function(ev){
       if (ev.key === 'Escape' && !popup.hidden) hide();
     });
+    // A click or tap outside is deliberate, so it dismisses a shown result too —
+    // otherwise the handoff block, which never resolves on its own, would trap
+    // the popup over the article on a device with no Escape key.
     document.addEventListener('mousedown', function(ev){
-      if (!popup.hidden && !popup.contains(ev.target)) hideIfIdle();
+      if (!popup.hidden && !popup.contains(ev.target) && !pending) hide();
     });
     window.addEventListener('scroll', function(){ if (!popup.hidden) hideIfIdle(); }, {passive: true});
 
