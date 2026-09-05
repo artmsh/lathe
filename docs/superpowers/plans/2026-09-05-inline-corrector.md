@@ -1160,6 +1160,7 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
     // Reader-supplied and model-supplied strings both go in as textContent,
     // never innerHTML — the same rule the ask drawer follows.
     function showResult(text){
+      pending = false;
       resolved = true;
       statusEl.hidden = false;
       statusEl.textContent = text;
@@ -1168,6 +1169,7 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
     // No worker: render the paste-able block with a Copy button, reusing the
     // page's clipboard helper so it works outside a secure context too.
     function showHandoff(command){
+      pending = false;
       resolved = true;
       statusEl.hidden = false;
       statusEl.textContent = '';
@@ -1198,6 +1200,7 @@ In `layout.html`, add this block just before `{{template "liveNudge" .}}`:
     // article body, so a changed part stays stale on screen until the reader
     // reloads. A reader told "left unchanged" simply won't click.
     function offerReload(report){
+      pending = false;
       resolved = true;
       statusEl.hidden = false;
       statusEl.textContent = (report || 'Part updated.') + ' ';
