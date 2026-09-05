@@ -438,7 +438,8 @@
       }
 
       var body = {ratio: ratio, heading_id: headingID, auto: isAuto};
-      if (exercises !== null) body.exercises = collectExercises();
+      var checkedExercises = collectExercises();
+      if (checkedExercises !== null) body.exercises = checkedExercises;
 
       fetch('/-/progress/' + encodeURIComponent(slug) + '/' + encodeURIComponent(part), {
         method: 'POST',
