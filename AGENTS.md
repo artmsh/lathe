@@ -6,9 +6,9 @@ Orientation for AI coding agents working in this repo.
 
 Lathe is a Go CLI plus a set of coding-agent skills (the `SKILL.md` format is now a cross-tool standard — Claude Code, Cursor, Codex, Gemini CLI, opencode, Cline, Windsurf) that together generate, store, serve, verify, and extend hands-on technical tutorials. See `README.md` for user-facing docs.
 
-The boundary is strict: **skills generate content; the CLI owns durable state.** All model work — generating, verifying, extending, answering reader questions, and authoring voices — runs in the user's **interactive** coding-agent session via user-invoked skills (`/lathe`, `/lathe-onboard`, `/lathe-verify`, `/lathe-extend`, `/lathe-ask`, `/lathe-tag`, `/lathe-voice`, `/lathe-work`). The Go binary never drives a model itself — it spawns no `claude`/agent subprocess (which also keeps Lathe off metered headless runs like `claude -p`, metered as of 2026-06-15; interactive sessions are not). Don't move generation logic into Go, and don't have skills write to `~/.lathe/` directly — they call `lathe` commands (`lathe store`, `lathe verify-result`, `lathe extend-start`/`extend-commit`, `lathe voice add`) instead. The one skill→CLI **read** path is `lathe voice show` (the active voice spec) — still consistent with the boundary: the CLI stays the sole owner of the voice files and config; the skill only asks for text.
+The boundary is strict: **skills generate content; the CLI owns durable state.** All model work — generating, verifying, extending, answering reader questions, and authoring voices — runs in the user's **interactive** coding-agent session via user-invoked skills (`/lathe`, `/lathe-onboard`, `/lathe-verify`, `/lathe-extend`, `/lathe-ask`, `/lathe-correct`, `/lathe-tag`, `/lathe-voice`, `/lathe-work`). The Go binary never drives a model itself — it spawns no `claude`/agent subprocess (which also keeps Lathe off metered headless runs like `claude -p`, metered as of 2026-06-15; interactive sessions are not). Don't move generation logic into Go, and don't have skills write to `~/.lathe/` directly — they call `lathe` commands (`lathe store`, `lathe verify-result`, `lathe extend-start`/`extend-commit`, `lathe correct-commit`, `lathe voice add`) instead. The one skill→CLI **read** path is `lathe voice show` (the active voice spec) — still consistent with the boundary: the CLI stays the sole owner of the voice files and config; the skill only asks for text.
 
-The web buttons close the copy-paste gap without crossing that boundary. When a `/lathe-work` worker session is connected (it long-polls `GET /-/work`, so `internal/queue` knows it's live), Ask/Verify/Extend **enqueue a job** the worker claims and runs in its interactive session; with no worker they fall back to the same paste-able handoff as before. The model still only ever runs in the interactive session — the queue is just an in-memory bridge between the browser and that session. MCP, if ever added, would be only an alternate transport for this same queue, not a way to run a model inside Go.
+The web buttons close the copy-paste gap without crossing that boundary. When a `/lathe-work` worker session is connected (it long-polls `GET /-/work`, so `internal/queue` knows it's live), Ask/Verify/Extend and the inline corrector (select text in a part, type a one-line note) **enqueue a job** the worker claims and runs in its interactive session; with no worker they fall back to the same paste-able handoff as before. The model still only ever runs in the interactive session — the queue is just an in-memory bridge between the browser and that session. MCP, if ever added, would be only an alternate transport for this same queue, not a way to run a model inside Go.
 
 ## Layout
 
@@ -21,6 +21,7 @@ cmd/
   verify-result.go                lathe verify-result — skill records verify status/result (and re-pins an onboarding guide via --repo-commit)
   drift.go                        lathe drift — pure-Go drift check for onboarding guides (no model)
   extend-start.go, extend-commit.go    lathe extend-{start,commit} — skill reserves/records a part
+  correct-commit.go                    lathe correct-commit — skill records a reader correction applied to a part (status → unverified)
   work.go                         lathe work next/answer/done — the /lathe-work worker loop's CLI (reads ~/.lathe/serve.json)
   tag.go                          lathe tag — skill sets/adds/removes a tutorial's search tags
   version.go                      lathe version — prints buildinfo.String() (alias for --version)
@@ -35,13 +36,14 @@ internal/
   skills/                         embedded skills (//go:embed data) + catalog (skills.go), Cursor translation (cursor.go)
   voice/                          embedded voice presets (//go:embed data) + List/Resolve/Add/Remove + fixed guardrail Preamble (voice.go)
   config/                         TutorialsDir(), VoicesDir(), ConfigDir() → ~/.lathe; config.json (ReadConfig/WriteConfig, DefaultVoice/SetDefaultVoice); serve.json runtime file (ServeRuntime Read/Write/Remove) so `lathe work` finds the running server
-  queue/                          in-memory job queue + worker presence (queue.go): Enqueue/Claim(long-poll+ctx)/Done/SetAnswer/Get, reclaim guard, MarkWorkerSeen/WorkerConnected — bridges the web UI and a /lathe-work session
+  queue/                          in-memory job queue + worker presence (queue.go): Enqueue/Claim(long-poll+ctx)/Done/SetAnswer/Get, reclaim guard, MarkWorkerSeen/WorkerConnected — bridges the web UI and a /lathe-work session. Four job types: ask, verify, extend, correct (drift is deliberately not one — no model involved)
   store/
     metadata.go                   Tutorial struct (incl. Kind + Repo/RepoBranch/RepoCommit/RepoPath + Tool/Tools + Sources + Voice + Model), Status enum, Kind enum, Read/WriteMetadata, RepoDisplay, VerifyResult, Read/WriteDrift
     store.go                      Store()/StoreOptions, Delete(), Normalize{Tags,Sources,Repo,Tools,Voice,Kind,Commit}, copyDir/copyFile, detectParts, SlugToTitle, PromoteIndexToPart
   serve/
     server.go                     net/http handlers (list, tutorial, part, delete); handleList renders a flat newest-first list; list.html does client-side search/filter/sort
-    ask.go, verify.go, extend.go  POST endpoints: enqueue a job when a /lathe-work worker is connected, else return a paste-able skill command (handoff.go: writeQueued/writeHandoff)
+    ask.go, verify.go, extend.go, correct.go
+                                  POST endpoints: enqueue a job when a /lathe-work worker is connected, else return a paste-able skill command (handoff.go: writeQueued/writeHandoff). correct.go carries the reader's selected excerpt + note, checks isKnownPart before accepting a write, and delimits the excerpt with <<< / >>> sentinels in the handoff (fences can't — a selection may contain backticks)
     drift.go                      POST /-/drift/{slug} — runs the drift check in-process; deliberately NOT queued (no model involved)
     work.go                       worker bridge endpoints: GET /-/work (long-poll claim), POST /-/work/{id}/{answer,done}, GET /-/work/{id} (browser ask-answer poll), GET /-/worker (presence)
     renderer.go                   goldmark + chroma markdown rendering
@@ -58,6 +60,7 @@ internal/
   lathe-verify/SKILL.md           /lathe-verify — runs verification interactively
   lathe-extend/SKILL.md           /lathe-extend — writes the next part interactively
   lathe-ask/SKILL.md              /lathe-ask — answers reader questions about a part
+  lathe-correct/SKILL.md          /lathe-correct — applies a reader's inline correction to one part
   lathe-tag/SKILL.md              /lathe-tag — picks/backfills search tags for stored tutorials
   lathe-voice/SKILL.md            /lathe-voice — authors a custom writing voice, then persists it via lathe voice add
   lathe-work/SKILL.md             /lathe-work — worker loop: long-poll lathe work next, apply the matching /lathe-* protocol, report via work answer/done

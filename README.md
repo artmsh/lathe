@@ -42,6 +42,7 @@ The CLI has a bunch of other commands, but honestly those were built to give the
 
 There are two ways those buttons work:
 
+- **Inline corrections:** select any text in a part and a small popup appears with a one-line field — "What's wrong here?". Apply sends the selection plus your note to a connected `/lathe-work` agent, which locates the passage, makes the narrowest edit to that part, and drops the tutorial back to `unverified`; it reports back in one line (including when it deliberately changed nothing), and you reload to see the new text. With no agent connected you get a `/lathe-correct` command to paste instead.
 - **Live mode (no copy-paste):** run `/lathe-work` once in your coding agent while `lathe serve` is running. That starts a small worker loop, the Ask drawer shows "● agent connected", and the **Ask / Verify this tutorial / Add a part** buttons drive the work directly in that session — the answer renders right in the reader, verify and extend update in place. Works in any supported agent. Stop the loop any time; the buttons just revert to copy-paste.
 - **Copy-paste fallback (no worker connected):** each button hands you the exact `/lathe-*` command to paste into your LLM to trigger the action.
 
