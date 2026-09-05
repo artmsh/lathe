@@ -186,6 +186,18 @@ func skillNames() ([]string, error) {
 	return names, nil
 }
 
+// E2E runs the browser-driven test for the inline corrector's selection popup
+// (test/e2e/corrector.mjs). It is deliberately NOT part of Check: it needs node
+// and a local Chrome, which the Go build does not depend on and CI does not
+// install. It serves a throwaway tutorial from a temp HOME, so it never touches
+// the developer's ~/.lathe.
+func E2E() error {
+	if err := Build(); err != nil {
+		return err
+	}
+	return run("node", "test/e2e/corrector.mjs")
+}
+
 // Check runs the full gate: fmt check, skills parity check, vet, lint, test,
 // build. This is what CI runs and what you should run before opening a PR. It
 // stops at the first failure.

@@ -14,6 +14,7 @@ The web buttons close the copy-paste gap without crossing that boundary. When a 
 
 ```
 main.go                           cobra entrypoint
+test/e2e/corrector.mjs            headless-Chrome test of the corrector popup (mage e2e; not in mage check)
 cmd/
   root.go                         rootCmd ("lathe")
   list.go, open.go, rm.go, serve.go, store.go    one subcommand per file
@@ -81,7 +82,7 @@ Tests are plain `go test` (no top-level runner script). The `/lathe` (`lathe`) b
 
 CI (`.github/workflows/ci.yml`) runs `mage check` on every PR and push to `main`: gofmt, `go vet`, `golangci-lint`, `go test -race ./...`, and `go build`. **Before opening or updating a PR, run `mage check` and make sure it's green** — don't push work that leaves CI red. `mage check` is the exact command CI runs, so local and CI cannot drift.
 
-`magefile.go` defines the targets (`mage fmt|fmtCheck|skills|skillsCheck|vet|lint|test|build`, and `mage check` for all of them; `mage` alone runs `check`). It's stdlib-only and build-tagged (`//go:build mage`), so it adds nothing to `go.mod`. Lint config lives in `.golangci.yml`. One-time tool install:
+`magefile.go` defines the targets (`mage fmt|fmtCheck|skills|skillsCheck|vet|lint|test|build`, and `mage check` for all of them; `mage` alone runs `check`). `mage e2e` is the one target **outside** the gate: it drives `test/e2e/corrector.mjs` — a headless-Chrome test of the inline corrector's selection popup — and needs node plus a local Chrome, which CI does not install. It serves a throwaway tutorial from a temp `HOME`, so it never touches your `~/.lathe`; run it after touching the corrector or the page scripts in `layout.html`, since a `ReferenceError` in one inline `<script>` block is invisible to `go test`. It's stdlib-only and build-tagged (`//go:build mage`), so it adds nothing to `go.mod`. Lint config lives in `.golangci.yml`. One-time tool install:
 
 ```bash
 go install github.com/magefile/mage@v1.15.0
