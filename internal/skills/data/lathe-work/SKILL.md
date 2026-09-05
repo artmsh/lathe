@@ -1,12 +1,12 @@
 ---
 name: lathe-work
-description: Run the Lathe worker loop so the web UI's Ask / Verify / Add-a-part buttons drive work directly in this session instead of handing back a command to paste. Use when the user invokes /lathe-work (start it once per session while `lathe serve` is running). Works in any coding agent.
+description: Run the Lathe worker loop so the web UI's Ask / Verify / Add-a-part buttons and its inline corrector drive work directly in this session instead of handing back a command to paste. Use when the user invokes /lathe-work (start it once per session while `lathe serve` is running). Works in any coding agent.
 tags: [skill, lathe]
 ---
 
 # Lathe — Worker Loop
 
-Start a long-running loop that lets the `lathe serve` web UI drive Ask, Verify, and Add-a-part **directly in this session**. With this loop running, the browser buttons enqueue a job and you pick it up here — no copy-paste of a `/lathe-*` command. Triggered by `/lathe-work`.
+Start a long-running loop that lets the `lathe serve` web UI drive Ask, Verify, Add-a-part and inline corrections **directly in this session**. With this loop running, the browser buttons enqueue a job and you pick it up here — no copy-paste of a `/lathe-*` command. Triggered by `/lathe-work`.
 
 This is just **long-poll → do the model work → report → repeat**, so it works in *any* supported coding agent. The strict boundary still holds: **the binary never drives a model.** All model work runs here, in your normal interactive session — never via `-p` / headless. Verify runs the tutorial's code under exactly the same trust model as `/lathe-verify` does today (a fresh `mktemp -d`, your normal permissions).
 
@@ -28,10 +28,10 @@ Repeat until the user stops you (Ctrl-C, "stop the worker", or closing the sessi
    ```
    This long-polls (~50s) and prints **either** `no task` **or** a single JSON object like:
    ```json
-   {"id":"7","type":"verify","slug":"digital-synth-zig","part":"part-02.md","question":"…","guidance":"…","state":"claimed"}
+   {"id":"7","type":"verify","slug":"digital-synth-zig","part":"part-02.md","question":"…","guidance":"…","excerpt":"…","note":"…","state":"claimed"}
    ```
    - If it prints `no task`, **loop back to step 1 immediately** — that's just an idle long-poll, not an error.
-   - Otherwise parse the JSON and note `id`, `type`, `slug`, and (depending on type) `part`/`question`/`guidance`.
+   - Otherwise parse the JSON and note `id`, `type`, `slug`, and (depending on type) `part`/`question`/`guidance`/`excerpt`/`note`.
 
 2. **Dispatch on `type`**, applying the existing protocol as the source of truth — don't duplicate or paraphrase it, *apply* it:
 
@@ -51,6 +51,17 @@ Repeat until the user stops you (Ctrl-C, "stop the worker", or closing the sessi
      ```
      (`--answer -` reads the answer from stdin, the same stdin pattern `lathe voice add --file -` uses.) The browser is polling for it and will render it in the reader's Ask drawer. `work answer` closes the job for you — don't also call `work done` for an ask.
 
+   - **`correct`** → apply the **`/lathe-correct`** protocol against `slug` / `part`, passing `excerpt` (the text the reader selected) and `note` (what they say is wrong). It locates the excerpt, applies the narrowest edit to that one part, and records it with `lathe correct-commit`. Close the job by sending its one-line report back — **not** with `work done`, which carries no message and would leave the browser claiming the part changed even when the skill deliberately changed nothing:
+     ```bash
+     printf '%s' "<the one-line report>" | lathe work answer <id> --answer -
+     ```
+     Examples: `rewrote the sample-rate paragraph: 512 → 1024` / `left unchanged: that passage isn't in part-02.md` / `left unchanged: the tutorial is right, mtimes are nanosecond-precision on APFS`.
+
+   - **anything else** → an unrecognised `type` means this skill copy is older than the server. Don't guess at it: say so in chat and close it so the browser isn't left polling a job nobody will finish.
+     ```bash
+     lathe work done <id>
+     ```
+
 3. **Briefly note** in chat what you just handled (e.g. "Verified digital-synth-zig — clean" or "Answered a question on part-02"), then **loop back to step 1.**
 
 ## Keeping the loop responsive and its context small
@@ -64,7 +75,7 @@ This loop is long-running and each job is independent — nothing carries over f
 ## Boundaries
 
 - **Reuse the protocols, don't reinvent them.** Each job type is just "run the matching `/lathe-*` skill, then report." All the real rules (read-only verify, the extend handshake, grounded ask answers) live in those skills and win on any conflict.
-- **Always close the job.** `verify`/`extend` → `lathe work done <id>`; `ask` → `lathe work answer <id> --answer -` (which closes it). A job left open ties up the browser until the server's reclaim timeout.
+- **Always close the job.** `verify`/`extend` → `lathe work done <id>`; `ask` → `lathe work answer <id> --answer -` (which closes it); `correct` → `lathe work answer <id> --answer -` with a one-line report (the part edit is already durable via `lathe correct-commit`; the report is what the reader sees, including when nothing was changed). A job left open ties up the browser until the server's reclaim timeout.
 - **Interactive session only.** Never shell out to `-p` / headless to do the work — that's the metered path this whole design avoids.
 - **Sequential or concurrent — match your harness.** Without background sub-tasks, finish and report each job before claiming the next. With them, several jobs may be in flight at once; that's fine and keeps presence fresh. Concurrency is safe: the server rejects a second verify/extend on a tutorial that's already verifying/extending, so two jobs can't collide on the same `slug`, and ask jobs are read-only.
 

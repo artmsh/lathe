@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -10,7 +11,7 @@ func TestAllReturnsEverySkillWithMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("All() error: %v", err)
 	}
-	const want = 8
+	const want = 9
 	if len(all) != want {
 		t.Fatalf("All() returned %d skills, want %d", len(all), want)
 	}
@@ -18,6 +19,7 @@ func TestAllReturnsEverySkillWithMetadata(t *testing.T) {
 	wantSlugs := map[string]bool{
 		"lathe":         false,
 		"lathe-ask":     false,
+		"lathe-correct": false,
 		"lathe-extend":  false,
 		"lathe-onboard": false,
 		"lathe-tag":     false,
@@ -46,4 +48,51 @@ func TestAllReturnsEverySkillWithMetadata(t *testing.T) {
 			t.Errorf("missing expected skill %q", slug)
 		}
 	}
+}
+
+// The bundled set is the contract for `lathe skills install`; a new skill that
+// never reaches data/ ships a binary that can't install it.
+func TestCorrectSkillIsBundled(t *testing.T) {
+	all, err := All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *Skill
+	for i := range all {
+		if all[i].Slug == "lathe-correct" {
+			found = &all[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("lathe-correct is not bundled; got %d skills", len(all))
+	}
+	if found.Name == "" || found.Description == "" {
+		t.Errorf("lathe-correct frontmatter = name %q, description %q; want both set", found.Name, found.Description)
+	}
+	if !bytes.Contains(found.Raw, []byte("lathe correct-commit")) {
+		t.Error("lathe-correct SKILL.md never calls `lathe correct-commit`")
+	}
+}
+
+// A worker running an older copy of lathe-work must not strand a correct job.
+func TestWorkSkillDispatchesCorrect(t *testing.T) {
+	all, err := All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range all {
+		if s.Slug != "lathe-work" {
+			continue
+		}
+		// The correct branch reports through `work answer` (the browser shows the
+		// one-liner); the unknown-type catch-all closes with `work done`.
+		for _, want := range []string{"/lathe-correct", "unrecognised", "lathe work answer", "lathe work done"} {
+			if !bytes.Contains(s.Raw, []byte(want)) {
+				t.Errorf("lathe-work SKILL.md missing %q", want)
+			}
+		}
+		return
+	}
+	t.Fatal("lathe-work is not bundled")
 }
