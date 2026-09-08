@@ -747,6 +747,15 @@
           // @import, see below) — so keep the reading font instead of falling
           // back to whatever the browser picks.
           font: 'var(--font-body)',
+          // Tighter than the renderer's defaults, which are drawn for a full
+          // page rather than a column of prose: a top-down flowchart at the
+          // stock spacing runs taller than the viewport and turns a glance
+          // into a scroll. Roughly a quarter of the height comes back with no
+          // loss of legibility — the node boxes and edge labels are untouched,
+          // only the air between them.
+          layerSpacing: 20,
+          nodeSpacing: 14,
+          padding: 8,
           bg: 'var(--diagram-bg)',
           fg: 'var(--diagram-fg)',
           line: 'var(--diagram-line)',
