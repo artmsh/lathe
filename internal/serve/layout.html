@@ -721,32 +721,78 @@
 </script>
 <script>
   // Render any ```mermaid fenced blocks the markdown renderer rewrote into
-  // <div class="mermaid"> elements. The mermaid UMD bundle is served locally
-  // from /_static/ so this works fully offline. We stash each diagram's source
-  // on data-source so we can re-render with a fresh theme on dark-mode toggle.
+  // <div class="mermaid"> elements. Agentic Mermaid's browser bundle is served
+  // locally from /_static/ so this works fully offline, and its renderer is
+  // synchronous and zero-DOM — one call per block, no promises, no reflow
+  // storm. The palette is passed as CSS custom properties (--diagram-*, see
+  // styles.css), which the emitted SVG references directly, so the dark-mode
+  // toggle re-themes every diagram with no re-render. We still stash the
+  // source on data-source: innerHTML would otherwise destroy it.
   (function(){
     var divs = Array.prototype.slice.call(document.querySelectorAll('.mermaid'));
     if (!divs.length) return;
     divs.forEach(function(d){ d.dataset.source = d.textContent.trim(); });
-    function themeFor(){
-      return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'default';
-    }
+
     function render(){
-      if (!window.mermaid) return;
-      divs.forEach(function(d){
-        d.removeAttribute('data-processed');
-        d.textContent = d.dataset.source;
+      var am = window.agenticMermaid;
+      if (!am) return;
+      divs.forEach(function(d, i){
+        var opts = {
+          bg: 'var(--diagram-bg)',
+          fg: 'var(--diagram-fg)',
+          line: 'var(--diagram-line)',
+          accent: 'var(--diagram-accent)',
+          muted: 'var(--diagram-muted)',
+          surface: 'var(--diagram-surface)',
+          border: 'var(--diagram-border)',
+          // Namespaces <defs> ids (arrowhead markers, clip paths) per block —
+          // without it the second diagram on a page reuses the first's ids.
+          idPrefix: 'lathe-diagram-' + i + '-',
+          // No Google Fonts @import, no external references: the reading UI
+          // makes zero network requests off this host.
+          embedFontImport: false,
+          security: 'strict'
+        };
+        var svg;
+        try {
+          svg = am.renderMermaidSVG(d.dataset.source, opts);
+        } catch (err) {
+          // Leave the raw source visible (the :not([data-processed]) rule
+          // styles it as a monospace block) rather than blanking the diagram.
+          console.warn('mermaid render failed', err);
+          return;
+        }
+        d.innerHTML = svg;
+        // mermaid.js used to set this; the styling that reveals unrendered
+        // source keys off it, so the renderer's replacement must set it too.
+        d.setAttribute('data-processed', 'true');
+        fit(d);
       });
-      window.mermaid.initialize({startOnLoad:false, theme: themeFor(), securityLevel:'loose'});
-      window.mermaid.run({nodes: divs}).catch(function(err){ console.warn('mermaid render failed', err); });
     }
+
+    // A wide diagram scaled into a 66ch column becomes unreadable. Past ~1.4x
+    // the available width, keep natural size and let .mermaid scroll instead.
+    function fit(d){
+      var svg = d.firstElementChild;
+      if (!svg) return;
+      var natural = parseFloat(svg.getAttribute('width'));
+      var avail = d.clientWidth - 32; // .mermaid padding
+      if (natural && avail > 0 && natural > avail * 1.4) {
+        d.setAttribute('data-wide', '');
+      } else {
+        d.removeAttribute('data-wide');
+      }
+    }
+
     var s = document.createElement('script');
-    s.src = '/_static/mermaid.min.js';
+    s.src = '/_static/agentic-mermaid.min.js';
     s.onload = function(){
       render();
-      document.addEventListener('lathe:themechange', render);
+      // The palette is live CSS, so a theme change needs no re-render — only
+      // a width change can invalidate the fit decision.
+      window.addEventListener('resize', function(){ divs.forEach(fit); });
     };
-    s.onerror = function(){ console.warn('mermaid bundle failed to load'); };
+    s.onerror = function(){ console.warn('agentic-mermaid bundle failed to load'); };
     document.body.appendChild(s);
   })();
 </script>

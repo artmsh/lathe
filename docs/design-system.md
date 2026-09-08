@@ -174,7 +174,9 @@ place. The pre-render script in the `head` partial reads `localStorage`
 (`lathe-theme`) or the OS `prefers-color-scheme` and sets the attribute before
 paint. The `themeToggle` JS flips it and persists the choice; mermaid diagrams
 and the syntax CSS both react (the dark Chroma rules are scoped under
-`[data-theme="dark"] .chroma`).
+`[data-theme="dark"] .chroma`). Diagrams need no re-render to follow the theme:
+the `--diagram-*` tokens alias the page tokens, and Agentic Mermaid writes them
+into the SVG as live CSS custom properties rather than baked hex.
 
 ## How to add a new status or callout
 

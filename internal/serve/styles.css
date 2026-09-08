@@ -48,6 +48,17 @@
   /* Anchored code excerpts (light) — the path:line header above a repo excerpt */
   --anchor-border:#D6C9B4; --anchor-label:#6B5F53;
 
+  /* Diagrams — the seven palette slots Agentic Mermaid reads. They alias page
+     tokens, so light/dark follows the theme with no re-render (the renderer
+     copies these values onto the <svg> as --bg/--fg/--line/… and derives the
+     rest with color-mix). They need their own names: the renderer writes
+     --accent onto the same element it would read --accent from, and a
+     same-element custom-property cycle resolves to nothing. */
+  --diagram-bg:var(--surface); --diagram-fg:var(--text);
+  --diagram-line:var(--border-strong); --diagram-accent:var(--text-muted);
+  --diagram-muted:var(--text-subtle); --diagram-surface:var(--surface-sunken);
+  --diagram-border:var(--border-strong);
+
   /* Type */
   --font-display:'Fraunces','Iowan Old Style',Georgia,serif;
   --font-body:'Newsreader','Iowan Old Style',Charter,Georgia,serif;
@@ -256,10 +267,28 @@ pre[data-overflow="true"]{box-shadow:inset -18px 0 14px -12px rgba(40,30,20,.20)
 .anchor pre{margin-top:0;border-top-left-radius:0;border-top-right-radius:0}
 .anchor-path{font-family:var(--font-mono);font-size:.72rem;color:var(--anchor-label);background:var(--surface-sunken);border:1px solid var(--anchor-border);border-bottom:none;border-radius:var(--radius-md) var(--radius-md) 0 0;padding:.35rem .75rem;margin:0;overflow-wrap:anywhere;user-select:all}
 
-/* Mermaid diagrams */
+/* Mermaid diagrams (rendered by Agentic Mermaid — see layout.html) */
 .mermaid{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;margin:1.4rem 0;text-align:center;overflow-x:auto;max-width:100%}
 .mermaid:not([data-processed]){font-family:var(--font-mono);font-size:.8rem;text-align:left;white-space:pre;color:var(--text-faint)}
 .mermaid svg{max-width:100%;height:auto}
+/* A diagram far wider than the column shrinks to illegibility if it always
+   fits. Past ~1.4x the container the script marks it wide and it keeps its
+   natural size, scrolling inside the .mermaid box instead. The edge fades are
+   the scroll affordance: background-attachment:local pins the inner pair to
+   the content so each fade disappears when that end is reached. */
+.mermaid[data-wide] svg{max-width:none;width:auto}
+.mermaid[data-wide]{
+  text-align:left;
+  background-image:
+    linear-gradient(to right,var(--surface),transparent),
+    linear-gradient(to left,var(--surface),transparent),
+    linear-gradient(to right,rgba(0,0,0,.10),transparent),
+    linear-gradient(to left,rgba(0,0,0,.10),transparent);
+  background-position:left center,right center,left center,right center;
+  background-repeat:no-repeat;
+  background-size:28px 100%,28px 100%,10px 100%,10px 100%;
+  background-attachment:local,local,scroll,scroll;
+}
 
 /* ---- 4. Components ------------------------------------------------------- */
 

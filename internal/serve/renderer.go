@@ -354,9 +354,9 @@ func calloutLabel(kind string) string {
 }
 
 // preprocessMermaid rewrites ```mermaid fenced blocks into raw HTML divs that
-// the browser-side mermaid library renders into SVG. The body is HTML-escaped
-// so labels containing < > & survive intact; the browser un-escapes them when
-// mermaid reads textContent.
+// the browser-side renderer (Agentic Mermaid, loaded by layout.html) turns into
+// SVG. The body is HTML-escaped so labels containing < > & survive intact; the
+// browser un-escapes them when the script reads textContent.
 func preprocessMermaid(src []byte) []byte {
 	return mermaidBlock.ReplaceAllFunc(src, func(match []byte) []byte {
 		sub := mermaidBlock.FindSubmatch(match)

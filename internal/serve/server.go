@@ -30,7 +30,7 @@ var templateFS embed.FS
 //go:embed styles.css
 var stylesCSS string
 
-//go:embed static/mermaid.min.js
+//go:embed static/agentic-mermaid.min.js
 //go:embed static/katex.min.js static/katex-auto-render.min.js static/katex.min.css
 //go:embed static/favicon.svg
 //go:embed static/fonts/fraunces.woff2 static/fonts/newsreader.woff2 static/fonts/newsreader-italic.woff2 static/fonts/jetbrains-mono.woff2
@@ -106,7 +106,7 @@ func (s *Server) Handler() http.Handler {
 // unexpected route — even though the {name} wildcard already can't contain a
 // slash, this is the cheap belt-and-suspenders check.
 var staticAssets = map[string]string{
-	"mermaid.min.js":           "application/javascript; charset=utf-8",
+	"agentic-mermaid.min.js":   "application/javascript; charset=utf-8",
 	"katex.min.js":             "application/javascript; charset=utf-8",
 	"katex-auto-render.min.js": "application/javascript; charset=utf-8",
 	"katex.min.css":            "text/css; charset=utf-8",

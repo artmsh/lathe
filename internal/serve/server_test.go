@@ -1176,23 +1176,64 @@ func TestSinglePartRedirect(t *testing.T) {
 func TestStaticMermaidAsset(t *testing.T) {
 	dir := t.TempDir()
 	srv := serve.NewServer(dir)
-	req := httptest.NewRequest(http.MethodGet, "/_static/mermaid.min.js", nil)
+	req := httptest.NewRequest(http.MethodGet, "/_static/agentic-mermaid.min.js", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("GET /_static/mermaid.min.js = %d, want %d", w.Code, http.StatusOK)
+		t.Fatalf("GET /_static/agentic-mermaid.min.js = %d, want %d", w.Code, http.StatusOK)
 	}
 	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/javascript") {
 		t.Errorf("Content-Type = %q, want application/javascript", ct)
 	}
 	if w.Body.Len() < 100_000 {
-		t.Errorf("mermaid bundle suspiciously small (%d bytes)", w.Body.Len())
+		t.Errorf("diagram bundle suspiciously small (%d bytes)", w.Body.Len())
 	}
-	// Sanity-check that this is the real UMD bundle by looking for the global
-	// it installs on window.
-	if !strings.Contains(w.Body.String(), "mermaid") {
-		t.Error("mermaid bundle body does not mention 'mermaid'")
+	// Sanity-check that this is the real browser bundle by looking for the
+	// global it installs on window and the entry point layout.html calls.
+	body := w.Body.String()
+	if !strings.Contains(body, "agenticMermaid") || !strings.Contains(body, "renderMermaidSVG") {
+		t.Error("diagram bundle body is missing the agenticMermaid global or renderMermaidSVG")
+	}
+}
+
+// The reading UI is fully offline. The diagram bundle can emit a Google Fonts
+// @import into its SVG, so the page must render with that switched off (and in
+// strict mode, which rejects every external reference).
+func TestMermaidLoaderStaysOffline(t *testing.T) {
+	dir := t.TempDir()
+	tutDir := filepath.Join(dir, "diagrammy")
+	if err := os.MkdirAll(tutDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	part := "# Shapes\n\n```mermaid\nflowchart LR\n  A --> B\n```\n"
+	if err := os.WriteFile(filepath.Join(tutDir, "part-01.md"), []byte(part), 0644); err != nil {
+		t.Fatal(err)
+	}
+	tut := &store.Tutorial{Slug: "diagrammy", Title: "Diagrammy", Status: store.StatusUnverified, Parts: []string{"part-01.md"}}
+	if err := store.WriteMetadata(tutDir, tut); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := serve.NewServer(dir)
+	req := httptest.NewRequest(http.MethodGet, "/diagrammy/part-01.md", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /diagrammy/part-01.md = %d, want %d", w.Code, http.StatusOK)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"/_static/agentic-mermaid.min.js",
+		"renderMermaidSVG",
+		"embedFontImport: false",
+		"security: 'strict'",
+		"idPrefix:",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("part page missing %q from the diagram loader", want)
+		}
 	}
 }
 
