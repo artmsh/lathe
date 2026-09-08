@@ -271,24 +271,14 @@ pre[data-overflow="true"]{box-shadow:inset -18px 0 14px -12px rgba(40,30,20,.20)
 .mermaid{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:1rem;margin:1.4rem 0;text-align:center;overflow-x:auto;max-width:100%}
 .mermaid:not([data-processed]){font-family:var(--font-mono);font-size:.8rem;text-align:left;white-space:pre;color:var(--text-faint)}
 .mermaid svg{max-width:100%;height:auto}
-/* A diagram far wider than the column shrinks to illegibility if it always
-   fits. Past ~1.4x the container the script marks it wide and it keeps its
-   natural size, scrolling inside the .mermaid box instead. The edge fades are
-   the scroll affordance: background-attachment:local pins the inner pair to
-   the content so each fade disappears when that end is reached. */
-.mermaid[data-wide] svg{max-width:none;width:auto}
-.mermaid[data-wide]{
-  text-align:left;
-  background-image:
-    linear-gradient(to right,var(--surface),transparent),
-    linear-gradient(to left,var(--surface),transparent),
-    linear-gradient(to right,rgba(0,0,0,.10),transparent),
-    linear-gradient(to left,rgba(0,0,0,.10),transparent);
-  background-position:left center,right center,left center,right center;
-  background-repeat:no-repeat;
-  background-size:28px 100%,28px 100%,10px 100%,10px 100%;
-  background-attachment:local,local,scroll,scroll;
-}
+/* A diagram always fits — it is never scrolled sideways. One wider than the
+   reading column breaks out of it instead: the script (layout.html) gives the
+   box an explicit width up to the viewport gutters and the negative inline
+   margins that re-center it, and `max-width:100%` on the svg does the rest.
+   Widening the box before scaling means the shrink is gentle (a full-width
+   flowchart lands near 1:1 on a large screen) rather than the 2-3x reduction
+   the 66ch measure would force. */
+.mermaid[data-wide]{max-width:none;overflow-x:visible}
 
 /* ---- 4. Components ------------------------------------------------------- */
 

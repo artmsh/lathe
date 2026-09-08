@@ -770,18 +770,30 @@
       });
     }
 
-    // A wide diagram scaled into a 66ch column becomes unreadable. Past ~1.4x
-    // the available width, keep natural size and let .mermaid scroll instead.
+    // A wide diagram scaled into a 66ch column becomes unreadable, and
+    // scrolling it sideways is worse — a reader should never have to drag a
+    // figure into view. So widen the box instead: let it break out of the
+    // reading column up to the viewport gutters, re-center it with negative
+    // inline margins, and let `max-width:100%` on the svg scale whatever is
+    // still too wide. Measured from a clean slate every time so a resize can
+    // narrow the box again as well as widen it.
     function fit(d){
+      d.style.width = '';
+      d.style.marginInline = '';
+      d.removeAttribute('data-wide');
       var svg = d.firstElementChild;
       if (!svg) return;
       var natural = parseFloat(svg.getAttribute('width'));
-      var avail = d.clientWidth - 32; // .mermaid padding
-      if (natural && avail > 0 && natural > avail * 1.4) {
-        d.setAttribute('data-wide', '');
-      } else {
-        d.removeAttribute('data-wide');
-      }
+      var column = d.clientWidth;
+      if (!natural || !column || natural <= column) return;
+      // Symmetric gutters: wide enough to clear the fixed section rail on the
+      // right edge, which is only mounted from 900px up (see styles.css).
+      var gutter = window.innerWidth >= 900 ? 48 : 16;
+      var target = Math.min(natural, document.documentElement.clientWidth - gutter * 2);
+      if (target <= column) return;
+      d.setAttribute('data-wide', '');
+      d.style.width = target + 'px';
+      d.style.marginInline = ((column - target) / 2) + 'px';
     }
 
     var s = document.createElement('script');
@@ -789,7 +801,7 @@
     s.onload = function(){
       render();
       // The palette is live CSS, so a theme change needs no re-render — only
-      // a width change can invalidate the fit decision.
+      // a width change can invalidate the fit.
       window.addEventListener('resize', function(){ divs.forEach(fit); });
     };
     s.onerror = function(){ console.warn('agentic-mermaid bundle failed to load'); };
