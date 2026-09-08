@@ -48,16 +48,27 @@
   /* Anchored code excerpts (light) — the path:line header above a repo excerpt */
   --anchor-border:#D6C9B4; --anchor-label:#6B5F53;
 
-  /* Diagrams — the seven palette slots Agentic Mermaid reads. They alias page
-     tokens, so light/dark follows the theme with no re-render (the renderer
-     copies these values onto the <svg> as --bg/--fg/--line/… and derives the
-     rest with color-mix). They need their own names: the renderer writes
-     --accent onto the same element it would read --accent from, and a
-     same-element custom-property cycle resolves to nothing. */
-  --diagram-bg:var(--surface); --diagram-fg:var(--text);
-  --diagram-line:var(--border-strong); --diagram-accent:var(--text-muted);
-  --diagram-muted:var(--text-subtle); --diagram-surface:var(--surface-sunken);
-  --diagram-border:var(--border-strong);
+  /* Diagrams — the seven palette slots Agentic Mermaid reads. The renderer
+     copies these onto the <svg> as --bg/--fg/--line/… and derives the rest
+     with color-mix, so where a slot aliases a page token the theme toggle
+     re-colours every diagram with no re-render. They need their own names:
+     the renderer writes --accent onto the same element it would read --accent
+     from, and a same-element custom-property cycle resolves to nothing.
+
+     For the same reason a slot must not alias a token the renderer overwrites
+     (--bg, --surface, --border, --accent): on the <svg> those names already
+     mean the diagram's own values, so --diagram-bg:var(--surface) would pick
+     up the node wash instead of the card ground. Those three carry literals,
+     duplicated in the dark block.
+
+     Tuned for the watercolor treatment: it wants ink for the strokes and a
+     warm wash for the fills, so --diagram-line and --diagram-border are text
+     weights rather than the UI border tokens, which are pale enough to leave
+     a sketched diagram looking bleached. */
+  --diagram-bg:#FFFDF8; --diagram-fg:var(--text);
+  --diagram-line:var(--text-muted); --diagram-accent:#B5451F;
+  --diagram-muted:var(--text-subtle); --diagram-surface:#EDE0C6;
+  --diagram-border:var(--text-faint);
 
   /* Type */
   --font-display:'Fraunces','Iowan Old Style',Georgia,serif;
@@ -84,6 +95,10 @@
   --accent:#E89A5C; --accent-hover:#F2AE73; --accent-soft:#2A2017;
   --btn-on-accent:#16130F;
   --code-bg:#1B1712; --code-text:#E5DCCB;
+
+  /* The diagram tokens that can't alias a page token (see :root) carry their
+     dark values here: the card ground, the arrow ink, and the node wash. */
+  --diagram-bg:#231E18; --diagram-accent:#E89A5C; --diagram-surface:#2F2718;
 
   --badge-verified-bg:#2A3320; --badge-verified-text:#A8C07A;
   --badge-verifying-bg:#3A2C14; --badge-verifying-text:#E0B069;

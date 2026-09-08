@@ -738,6 +738,15 @@
       if (!am) return;
       divs.forEach(function(d, i){
         var opts = {
+          // Hand-drawn look: 'watercolor' is the renderer treatment (jittered
+          // strokes, wash fills), 'paper' the surface under it. Stacks resolve
+          // left to right, and the explicit colours below still win — the
+          // style brings the texture, the page keeps the palette.
+          style: ['watercolor', 'paper'],
+          // The style asks for Caveat, which we can't ship (no Google Fonts
+          // @import, see below) — so keep the reading font instead of falling
+          // back to whatever the browser picks.
+          font: 'var(--font-body)',
           bg: 'var(--diagram-bg)',
           fg: 'var(--diagram-fg)',
           line: 'var(--diagram-line)',
