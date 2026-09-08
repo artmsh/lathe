@@ -282,8 +282,6 @@ Tools, by job:
 
 Aim for **one diagram per part**, only when a moment in that part genuinely benefits. Place it next to the prose that explains it; never drop one in cold without a sentence framing what to look at first. Cap nodes at ~10 — split or convert to a table if larger.
 
-Diagrams are rendered at natural size into a ~66ch reading column, so **prefer `flowchart TD` over `LR`** past three or four nodes — a long left-to-right chain becomes a strip the reader has to scroll sideways. Keep node labels under ~40 characters for the same reason.
-
 ````markdown
 ```mermaid
 flowchart LR
