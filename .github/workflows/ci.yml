@@ -4,6 +4,11 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Manual re-run. Push events on this fork have not been reliably starting
+  # CI (no check-runs on any main push since 2026-07-17 despite Actions being
+  # enabled), so keep a trigger that does not depend on them:
+  #   gh workflow run ci.yml --ref main
+  workflow_dispatch:
 
 permissions:
   contents: read
