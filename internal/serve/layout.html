@@ -753,6 +753,8 @@
           embedFontImport: false,
           security: 'strict'
         };
+        reset(d);
+        var column = d.clientWidth;
         var svg;
         try {
           svg = am.renderMermaidSVG(d.dataset.source, opts);
@@ -762,12 +764,42 @@
           console.warn('mermaid render failed', err);
           return;
         }
+        if (column && svgWidth(svg) > column) {
+          var upright = rotate(d.dataset.source);
+          if (upright) {
+            try {
+              var alt = am.renderMermaidSVG(upright, opts);
+              if (svgWidth(alt) < svgWidth(svg)) svg = alt;
+            } catch (err) { /* the rotated source didn't parse: keep the original */ }
+          }
+        }
         d.innerHTML = svg;
         // mermaid.js used to set this; the styling that reveals unrendered
         // source keys off it, so the renderer's replacement must set it too.
         d.setAttribute('data-processed', 'true');
         fit(d);
       });
+    }
+
+    function reset(d){
+      d.style.width = '';
+      d.style.marginInline = '';
+      d.removeAttribute('data-wide');
+    }
+
+    // A left-to-right flowchart that outgrows the reading column reads far
+    // better stood upright: vertical scroll is free, horizontal is not. So
+    // when the authored orientation overflows, render the top-down variant
+    // too and keep whichever is narrower. Only the graph header is rewritten
+    // — a `direction` inside a subgraph is relative to its parent and stays
+    // as authored.
+    var GRAPH_HEADER = /^([ \t]*)(flowchart|graph)([ \t]+)(LR|RL)\b/m;
+    function rotate(src){
+      return GRAPH_HEADER.test(src) ? src.replace(GRAPH_HEADER, '$1$2$3TD') : null;
+    }
+    function svgWidth(svg){
+      var m = /<svg[^>]*?\swidth="([0-9.]+)"/.exec(svg);
+      return m ? parseFloat(m[1]) : 0;
     }
 
     // A wide diagram scaled into a 66ch column becomes unreadable, and
@@ -778,9 +810,7 @@
     // still too wide. Measured from a clean slate every time so a resize can
     // narrow the box again as well as widen it.
     function fit(d){
-      d.style.width = '';
-      d.style.marginInline = '';
-      d.removeAttribute('data-wide');
+      reset(d);
       var svg = d.firstElementChild;
       if (!svg) return;
       var natural = parseFloat(svg.getAttribute('width'));
@@ -801,8 +831,14 @@
     s.onload = function(){
       render();
       // The palette is live CSS, so a theme change needs no re-render — only
-      // a width change can invalidate the fit.
-      window.addEventListener('resize', function(){ divs.forEach(fit); });
+      // a width change can invalidate the fit, and with it the orientation
+      // choice. Rendering is synchronous and cheap, so redo the lot, debounced
+      // so a drag-resize doesn't render on every frame.
+      var pending;
+      window.addEventListener('resize', function(){
+        clearTimeout(pending);
+        pending = setTimeout(render, 150);
+      });
     };
     s.onerror = function(){ console.warn('agentic-mermaid bundle failed to load'); };
     document.body.appendChild(s);

@@ -1230,6 +1230,8 @@ func TestMermaidLoaderStaysOffline(t *testing.T) {
 		"embedFontImport: false",
 		"security: 'strict'",
 		"idPrefix:",
+		// A flowchart wider than the reading column is re-rendered top-down.
+		"GRAPH_HEADER",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("part page missing %q from the diagram loader", want)
