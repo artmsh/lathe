@@ -293,6 +293,38 @@ flowchart LR
 ```
 ````
 
+### Inline SVG
+
+Mermaid is the default, and `lathe serve` gives it a breakout: a diagram wider than the reading
+column widens its own box out to the viewport gutters instead of scaling down or scrolling
+sideways. Hand-written SVG gets none of that. Reach for it only when the diagram needs the page's
+own palette and type, or a layout Mermaid won't produce.
+
+The renderer runs goldmark with `WithUnsafe()`, so a raw `<svg>` element reaches the DOM
+untouched. It serves no per-tutorial static assets — there is nowhere to put a `.png` or `.svg`
+file, so the diagram has to live inline in the part's `.md`.
+
+- **No blank lines anywhere inside the `<svg>`.** goldmark ends a raw HTML block at the first
+  blank line; everything after it is re-parsed as Markdown, so the browser meets `<rect>` and
+  `<text>` outside any SVG scope and the diagram renders as a wall of prose. Indentation and
+  comments are fine. Run `grep -c '^$'` over the SVG before pasting it in.
+- The page stamps `data-theme` on `<html>` before first paint and gives the reader a toggle, so
+  baked hex fills are wrong in one of the two themes. Write every fill and stroke as
+  `var(--token, #literalfallback)` with the light value as the fallback; the dark values then
+  swap in for free.
+- Tokens (`internal/serve/styles.css`): paper `--bg`, lift `--surface`, sunken
+  `--surface-sunken`, ink `--text`, then `--text-muted`, `--text-subtle`, `--text-faint`; rules
+  `--border` and `--border-strong`; focal `--accent` and `--accent-soft`. Type is
+  `--font-display`, `--font-body`, `--font-mono`, all served locally.
+- Size it `style="width:100%;height:auto;display:block;max-width:<viewBox width>px;margin:1.4rem auto"`.
+  A bare `<svg>` is not one of the elements clamped to `--measure`, so without that cap it takes
+  the full column.
+- Keep the `viewBox` width at ~660px or less. `main` is `calc(var(--measure) + 7rem)` and
+  `--measure` stays `66ch` until the viewport reaches 1200px, so a 984px diagram lands near
+  two-thirds scale on an ordinary window and its 12px labels render around 8px.
+- Give the `<svg>` `role="img"` and `aria-labelledby`, put `<title>` first, and prefix the ids
+  per diagram (`<slug>-title` / `<slug>-desc`) — two diagrams on one page collide otherwise.
+
 ## Code
 
 - One sentence before every block, telling the reader what to look at first.
