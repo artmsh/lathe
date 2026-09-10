@@ -456,6 +456,87 @@ func TestRenderExerciseHeadingDetection(t *testing.T) {
 	}
 }
 
+func TestRenderExercisePlainListsBecomeCheckable(t *testing.T) {
+	// Most tutorials write exercises as a plain numbered list. Those get a
+	// checkbox synthesized per item — unchecked, indexed in document order — and
+	// the list is tagged so the checklist styles apply to an <ol> too.
+	src := []byte("# Title\n\n## Exercises\n\n1. **Break it on purpose.** Find the case.\n2. Handle deletions.\n")
+	out, err := serve.RenderMarkdown(src)
+	if err != nil {
+		t.Fatalf("RenderMarkdown() error = %v", err)
+	}
+	html := string(out)
+	if !strings.Contains(html, `<ol class="exercise-list">`) {
+		t.Errorf("ordered exercise list missing the checklist class, got:\n%s", html)
+	}
+	for _, want := range []string{
+		`<input type="checkbox" class="exercise-check" data-exercise-index="0">`,
+		`<input type="checkbox" class="exercise-check" data-exercise-index="1">`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("missing synthesized checkbox %q, got:\n%s", want, html)
+		}
+	}
+	// Synthesized boxes start unchecked — nothing in the markdown says otherwise.
+	if strings.Contains(html, "checked=") {
+		t.Errorf("synthesized checkbox must not be pre-checked, got:\n%s", html)
+	}
+}
+
+func TestRenderExerciseAuthoredTaskListKeepsCheckedState(t *testing.T) {
+	// A section that already uses task-list syntax gets the class but no
+	// synthesis — the author's checked states survive and no box is doubled.
+	src := []byte("# Title\n\n## Exercises\n\n- [ ] Write the parser\n- [x] Wire it up\n")
+	out, err := serve.RenderMarkdown(src)
+	if err != nil {
+		t.Fatalf("RenderMarkdown() error = %v", err)
+	}
+	html := string(out)
+	if !strings.Contains(html, `<ul class="exercise-list">`) {
+		t.Errorf("authored task list missing the checklist class, got:\n%s", html)
+	}
+	if !strings.Contains(html, `data-exercise-index="1" checked=""`) {
+		t.Errorf("authored checked state lost, got:\n%s", html)
+	}
+	if n := strings.Count(html, "exercise-check"); n != 2 {
+		t.Errorf("expected exactly 2 checkboxes, got %d:\n%s", n, html)
+	}
+}
+
+func TestRenderNonExercisePlainListStaysPlain(t *testing.T) {
+	// Synthesis is scoped to exercise sections — an ordinary list elsewhere keeps
+	// its markers and gains nothing.
+	src := []byte("# Title\n\n## Summary\n\n1. First point\n2. Second point\n")
+	out, err := serve.RenderMarkdown(src)
+	if err != nil {
+		t.Fatalf("RenderMarkdown() error = %v", err)
+	}
+	html := string(out)
+	if strings.Contains(html, "exercise-check") || strings.Contains(html, "exercise-list") {
+		t.Errorf("a non-exercise list was wrongly made checkable, got:\n%s", html)
+	}
+	if strings.Contains(html, "<input") {
+		t.Errorf("a non-exercise list must gain no inputs, got:\n%s", html)
+	}
+}
+
+func TestRenderExerciseNestedListGetsNoCheckboxes(t *testing.T) {
+	// A list nested inside an exercise is sub-structure of that exercise, not a
+	// second set of exercises: only the two top-level items get boxes.
+	src := []byte("# Title\n\n## Exercises\n\n1. Outer one\n    - inner detail\n    - inner detail two\n2. Outer two\n")
+	out, err := serve.RenderMarkdown(src)
+	if err != nil {
+		t.Fatalf("RenderMarkdown() error = %v", err)
+	}
+	html := string(out)
+	if n := strings.Count(html, "exercise-check"); n != 2 {
+		t.Errorf("expected exactly 2 checkboxes (top-level items only), got %d:\n%s", n, html)
+	}
+	if n := strings.Count(html, "exercise-list"); n != 1 {
+		t.Errorf("only the section's own list should be tagged, got %d:\n%s", n, html)
+	}
+}
+
 func TestRenderAnchoredCodeBlock(t *testing.T) {
 	src := []byte("Here is the router.\n\n```go path=internal/serve/server.go lines=76-80\nmux.HandleFunc(\"GET /{slug}/\", s.handleTutorial)\n```\n")
 	out, err := serve.RenderMarkdown(src)

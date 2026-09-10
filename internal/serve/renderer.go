@@ -210,6 +210,11 @@ func renderScrollableTable(w util.BufWriter, _ []byte, node ast.Node, entering b
 // section with a stable, part-local index, in document order. The renderer reads
 // that tag to decide which checkboxes become interactive. Detection keys on the
 // heading's auto-generated id slug (assigned during parse, so it's present here).
+//
+// Exercises written as a plain list — `1.` or `-`, which is how most tutorials
+// author them — get a checkbox synthesized per item, so being checkable is a
+// property of the section rather than of the markdown syntax the author reached
+// for. Synthesis runs first, so indices stay document-order either way.
 type exerciseChecklist struct{}
 
 func (exerciseChecklist) Transform(doc *ast.Document, _ text.Reader, _ parser.Context) {
@@ -232,6 +237,12 @@ func (exerciseChecklist) Transform(doc *ast.Document, _ text.Reader, _ parser.Co
 			if hh, ok := s.(*ast.Heading); ok && hh.Level <= 2 {
 				break
 			}
+			// Only a list that *is* the section body becomes a checklist. A list
+			// nested inside an exercise item is sub-structure of that exercise,
+			// not a second set of exercises, so it keeps its own markers.
+			if list, ok := s.(*ast.List); ok {
+				markExerciseList(list)
+			}
 			_ = ast.Walk(s, func(c ast.Node, entering bool) (ast.WalkStatus, error) {
 				if entering {
 					if cb, ok := c.(*goldmarkeast.TaskCheckBox); ok {
@@ -243,6 +254,54 @@ func (exerciseChecklist) Transform(doc *ast.Document, _ text.Reader, _ parser.Co
 			})
 		}
 	}
+}
+
+// markExerciseList labels a list as the exercise checklist styles.css targets,
+// and gives each of its items a checkbox if the author didn't write one.
+func markExerciseList(list *ast.List) {
+	list.SetAttributeString("class", []byte("exercise-list"))
+	if listHasCheckbox(list) {
+		// An authored task list: leave the checked states the author wrote.
+		return
+	}
+	for li := list.FirstChild(); li != nil; li = li.NextSibling() {
+		item, ok := li.(*ast.ListItem)
+		if !ok {
+			continue
+		}
+		// The item's first block holds its opening text: a TextBlock in a tight
+		// list, a Paragraph in a loose one. Anything else (a nested list, a code
+		// block) means there is no line to hang a checkbox off.
+		first := item.FirstChild()
+		switch first.(type) {
+		case *ast.TextBlock, *ast.Paragraph:
+		default:
+			continue
+		}
+		cb := goldmarkeast.NewTaskCheckBox(false)
+		if fc := first.FirstChild(); fc != nil {
+			first.InsertBefore(first, fc, cb)
+		} else {
+			first.AppendChild(first, cb)
+		}
+	}
+}
+
+// listHasCheckbox reports whether the list already carries a task-list checkbox,
+// anywhere within it — including in a nested list, since a mixed list is authored
+// markup and synthesizing into it would double up the boxes.
+func listHasCheckbox(list *ast.List) bool {
+	found := false
+	_ = ast.Walk(list, func(c ast.Node, entering bool) (ast.WalkStatus, error) {
+		if entering {
+			if _, ok := c.(*goldmarkeast.TaskCheckBox); ok {
+				found = true
+				return ast.WalkStop, nil
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	return found
 }
 
 // isExerciseHeading is the single fragile input, check for them explicitly.
