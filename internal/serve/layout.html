@@ -1432,16 +1432,8 @@
       hide();
     }
 
-    // Anchor the popup under the selection, clamped to the viewport and flipped
-    // above when there's no room below.
-    function placeAt(rect){
+    function showPopup(){
       popup.hidden = false;
-      var w = popup.offsetWidth, h = popup.offsetHeight;
-      var left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8));
-      var top = rect.bottom + 8;
-      if (top + h > window.innerHeight - 8) top = Math.max(8, rect.top - h - 8);
-      popup.style.left = left + 'px';
-      popup.style.top = top + 'px';
     }
 
     // Arm only for selections that live entirely inside the article: the Ask
@@ -1461,7 +1453,7 @@
       // A fresh selection supersedes whatever the last correction reported.
       if (resolved) hide();
       excerpt = capBytes(text, MAX_EXCERPT_BYTES);
-      placeAt(sel.getRangeAt(0).getBoundingClientRect());
+      showPopup();
     }
 
     document.addEventListener('mouseup', function(){ setTimeout(onSelect, 0); });

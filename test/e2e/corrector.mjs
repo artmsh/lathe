@@ -183,7 +183,11 @@ const SELECT = `(async () => {
 const POPUP = `(() => {
   const p = document.getElementById('correctPopup');
   const s = document.getElementById('correctStatus');
+  const r = p.getBoundingClientRect();
   return {hidden: p.hidden, left: p.style.left, top: p.style.top,
+          centerX: r.left + r.width / 2, centerY: r.top + r.height / 2,
+          viewportCenterX: document.documentElement.clientWidth / 2,
+          viewportCenterY: document.documentElement.clientHeight / 2,
           status: s.hidden ? '' : s.textContent,
           buttons: [...s.querySelectorAll('button')].map(b => b.textContent),
           pre: s.querySelector('pre') ? s.querySelector('pre').textContent : ''};
@@ -231,7 +235,11 @@ try {
   const selected = await evaluate(SELECT);
   check('selection inside the article arms the popup', !!selected, JSON.stringify(selected?.slice(0, 40) ?? null));
   let st = await evaluate(POPUP);
-  check('popup is visible and positioned', st.hidden === false && !!st.left && !!st.top, `left=${st.left} top=${st.top}`);
+  check('popup is centered in the viewport',
+    st.hidden === false
+      && Math.abs(st.centerX - st.viewportCenterX) < 1
+      && Math.abs(st.centerY - st.viewportCenterY) < 1,
+    `center=${st.centerX},${st.centerY} viewport=${st.viewportCenterX},${st.viewportCenterY}`);
 
   await evaluate(SCROLL);
   st = await evaluate(POPUP);
